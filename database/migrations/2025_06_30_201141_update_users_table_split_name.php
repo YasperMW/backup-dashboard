@@ -12,25 +12,25 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->string('firstname')->after('id');
-            $table->string('lastname')->after('firstname');
-        });
-
         // Migrate existing data
         DB::table('users')->get()->each(function ($user) {
-            $parts = explode(' ', $user->name, 2);
-            $firstname = $parts[0];
-            $lastname = $parts[1] ?? '';
-            DB::table('users')->where('id', $user->id)->update([
-                'firstname' => $firstname,
-                'lastname' => $lastname,
-            ]);
+            if (property_exists($user, 'name') && $user->name) {
+                $parts = explode(' ', $user->name, 2);
+                $firstname = $parts[0];
+                $lastname = $parts[1] ?? '';
+                DB::table('users')->where('id', $user->id)->update([
+                    'firstname' => $firstname,
+                    'lastname' => $lastname,
+                ]);
+            }
         });
 
-        Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('name');
-        });
+        // Drop 'name' column if it exists
+        if (Schema::hasColumn('users', 'name')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->dropColumn('name');
+            });
+        }
     }
 
     /**

@@ -35,29 +35,7 @@
                 </div>
             </div>
 
-            <!-- Display Settings -->
-            <div class="bg-white rounded-lg shadow-sm p-6">
-                <h3 class="text-base font-medium text-gray-900 mb-4">Display Settings</h3>
-                <div class="space-y-4">
-                    <div>
-                        <label for="theme" class="block text-sm font-medium text-gray-700">Theme</label>
-                        <select name="theme" id="theme" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option value="light">Light</option>
-                            <option value="dark">Dark</option>
-                            <option value="system">System</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="items_per_page" class="block text-sm font-medium text-gray-700">Items Per Page</label>
-                        <select name="items_per_page" id="items_per_page" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option value="10">10</option>
-                            <option value="25">25</option>
-                            <option value="50">50</option>
-                            <option value="100">100</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
+           
 
             <!-- Save Button -->
             <div class="flex justify-end">

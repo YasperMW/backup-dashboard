@@ -36,20 +36,11 @@
                         </a>
                         <a href="{{ route('settings.security-configuration') }}"
                             class="block p-3 rounded-lg transition duration-200 {{ request()->routeIs('settings.security-configuration') ? 'bg-gray-900 text-white font-semibold' : 'hover:bg-gray-700 text-gray-300' }}">
-                            Security Configuration
+                           Backup Configuration
                         </a>
-                        <a href="{{ route('settings.notifications') }}"
-                            class="block p-3 rounded-lg transition duration-200 {{ request()->routeIs('settings.notifications') ? 'bg-gray-900 text-white font-semibold' : 'hover:bg-gray-700 text-gray-300' }}">
-                            Notifications
-                        </a>
-                        <a href="{{ route('settings.backup') }}"
-                            class="block p-3 rounded-lg transition duration-200 {{ request()->routeIs('settings.backup') ? 'bg-gray-900 text-white font-semibold' : 'hover:bg-gray-700 text-gray-300' }}">
-                            Backup Settings
-                        </a>
-                        <a href="{{ route('settings.integrations') }}"
-                            class="block p-3 rounded-lg transition duration-200 {{ request()->routeIs('settings.integrations') ? 'bg-gray-900 text-white font-semibold' : 'hover:bg-gray-700 text-gray-300' }}">
-                            Integrations
-                        </a>
+                      
+                     
+                        
                     </div>
                 </nav>
             </div>

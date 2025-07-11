@@ -94,12 +94,10 @@
                         </div>
 
                         <!-- Menu Items -->
-                        <a href="{{ route('profile.edit') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">
-                            Profile Settings
+                        <a href="{{ route('settings.general') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">
+                           General Settings
                         </a>
-                        <a href="{{ route('profile.show') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">
-                            Security Settings
-                        </a>
+                       
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf
                             <button type="submit" class="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">
@@ -112,7 +110,7 @@
         </header>
 
         <!-- Page Content -->
-        <main class="flex-1 overflow-hidden">
+        <main class="flex-1 overflow-auto">
             {{ $slot }}
         </main>
     </div>

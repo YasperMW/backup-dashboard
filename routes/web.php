@@ -21,9 +21,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/settings', [ProfileController::class, 'show'])->name('profile.show');
 
     // Backup Management Routes
-    Route::get('/backup/management', function () {
-        return view('backup.management');
-    })->name('backup.management');
+    Route::get('/backup/management', [\App\Http\Controllers\BackupController::class, 'showManagement'])->name('backup.management');
+    Route::post('/backup/start', [\App\Http\Controllers\BackupController::class, 'startBackup'])->name('backup.start');
+    Route::post('/backup/source-directory', [\App\Http\Controllers\BackupController::class, 'addSourceDirectory'])->name('backup.addSourceDirectory');
+    Route::delete('/backup/source-directory/{id}', [\App\Http\Controllers\BackupController::class, 'deleteSourceDirectory'])->name('backup.deleteSourceDirectory');
+    Route::post('/backup/destination-directory', [\App\Http\Controllers\BackupController::class, 'addDestinationDirectory'])->name('backup.addDestinationDirectory');
+    Route::delete('/backup/destination-directory/{id}', [\App\Http\Controllers\BackupController::class, 'deleteDestinationDirectory'])->name('backup.deleteDestinationDirectory');
+    Route::post('/backup/schedule', [\App\Http\Controllers\BackupController::class, 'createSchedule'])->name('backup.schedule.create');
+    Route::get('/backup/history/fragment', [\App\Http\Controllers\BackupController::class, 'getBackupHistoryFragment'])->name('backup.history.fragment');
 
     // Anomaly Detection Routes
     Route::get('/anomaly/detection', function () {
@@ -54,17 +59,8 @@ Route::middleware('auth')->group(function () {
             return view('settings.security-configuration');
         })->name('security-configuration');
 
-        Route::get('/notifications', function () {
-            return view('settings.notifications');
-        })->name('notifications');
-
-        Route::get('/backup', function () {
-            return view('settings.backup');
-        })->name('backup');
-
-        Route::get('/integrations', function () {
-            return view('settings.integrations');
-        })->name('integrations');
+       
+        
     });
 });
 
