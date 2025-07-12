@@ -18,6 +18,8 @@ return new class extends Migration
             $table->string('filename');
             $table->bigInteger('size')->nullable();
             $table->string('status')->default('pending'); // pending, completed, failed
+            $table->string('backup_type')->default('full'); // full, incremental, differential
+            $table->string('compression_level')->default('none'); // none, low, medium, high
             $table->timestamp('started_at')->nullable();
             $table->timestamp('completed_at')->nullable();
             $table->string('integrity_hash')->nullable();

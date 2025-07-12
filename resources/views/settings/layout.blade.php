@@ -34,8 +34,8 @@
                             class="block p-3 rounded-lg transition duration-200 {{ request()->routeIs('settings.security') ? 'bg-gray-900 text-white font-semibold' : 'hover:bg-gray-700 text-gray-300' }}">
                             Security Settings
                         </a>
-                        <a href="{{ route('settings.security-configuration') }}"
-                            class="block p-3 rounded-lg transition duration-200 {{ request()->routeIs('settings.security-configuration') ? 'bg-gray-900 text-white font-semibold' : 'hover:bg-gray-700 text-gray-300' }}">
+                        <a href="{{ route('settings.backup-configuration') }}"
+                            class="block p-3 rounded-lg transition duration-200 {{ request()->routeIs('settings.backup-configuration') ? 'bg-gray-900 text-white font-semibold' : 'hover:bg-gray-700 text-gray-300' }}">
                            Backup Configuration
                         </a>
                       

@@ -22,6 +22,8 @@ Route::middleware('auth')->group(function () {
 
     // Backup Management Routes
     Route::get('/backup/management', [\App\Http\Controllers\BackupController::class, 'showManagement'])->name('backup.management');
+    Route::get('/backup/config', [\App\Http\Controllers\BackupController::class, 'getBackupConfig'])->name('backup.config.get');
+    Route::post('/backup/config', [\App\Http\Controllers\BackupController::class, 'updateBackupConfig'])->name('backup.config.update');
     Route::post('/backup/start', [\App\Http\Controllers\BackupController::class, 'startBackup'])->name('backup.start');
     Route::post('/backup/source-directory', [\App\Http\Controllers\BackupController::class, 'addSourceDirectory'])->name('backup.addSourceDirectory');
     Route::delete('/backup/source-directory/{id}', [\App\Http\Controllers\BackupController::class, 'deleteSourceDirectory'])->name('backup.deleteSourceDirectory');
@@ -29,6 +31,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/backup/destination-directory/{id}', [\App\Http\Controllers\BackupController::class, 'deleteDestinationDirectory'])->name('backup.deleteDestinationDirectory');
     Route::post('/backup/schedule', [\App\Http\Controllers\BackupController::class, 'createSchedule'])->name('backup.schedule.create');
     Route::get('/backup/history/fragment', [\App\Http\Controllers\BackupController::class, 'getBackupHistoryFragment'])->name('backup.history.fragment');
+    Route::get('/backup/schedule/fragment', [\App\Http\Controllers\BackupController::class, 'getScheduleTableFragment'])->name('backup.schedule.fragment');
 
     // Anomaly Detection Routes
     Route::get('/anomaly/detection', function () {
@@ -55,9 +58,9 @@ Route::middleware('auth')->group(function () {
             return view('settings.security');
         })->name('security');
 
-        Route::get('/security-configuration', function () {
-            return view('settings.security-configuration');
-        })->name('security-configuration');
+        Route::get('/backup-configuration', function () {
+            return view('settings.backup-configuration');
+        })->name('backup-configuration');
 
        
         

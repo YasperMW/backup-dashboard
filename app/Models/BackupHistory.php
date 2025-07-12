@@ -17,5 +17,7 @@ class BackupHistory extends Model
         'integrity_hash',
         'integrity_verified_at',
         'error_message',
+        'backup_type',
+        'compression_level',
     ];
 }
