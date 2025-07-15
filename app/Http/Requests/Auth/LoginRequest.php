@@ -42,6 +42,13 @@ class LoginRequest extends FormRequest
         $this->ensureIsNotRateLimited();
 
         if (! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
+            \App\Models\LoginLog::create([
+                'user_id' => null,
+                'name' => null,
+                'email' => $this->input('email'),
+                'ip_address' => $this->ip(),
+                'status' => 'failed',
+            ]);
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([

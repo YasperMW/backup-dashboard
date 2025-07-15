@@ -28,6 +28,18 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
+        $user = Auth::user();
+        if ($user) {
+            $name = trim(($user->firstname ?? '') . ' ' . ($user->lastname ?? ''));
+            \App\Models\LoginLog::create([
+                'user_id' => $user->id,
+                'name' => $name,
+                'email' => $user->email,
+                'ip_address' => $request->ip(),
+                'status' => 'success',
+            ]);
+        }
+
         if (Auth::user()->two_factor_secret) {
             // Store the intended URL in the session
             $request->session()->put('url.intended', route('dashboard', absolute: false));
@@ -49,6 +61,18 @@ class AuthenticatedSessionController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
+        $user = Auth::user();
+        if ($user) {
+            $name = trim(($user->firstname ?? '') . ' ' . ($user->lastname ?? ''));
+            \App\Models\LoginLog::create([
+                'user_id' => $user->id,
+                'name' => $name,
+                'email' => $user->email,
+                'ip_address' => $request->ip(),
+                'status' => 'success',
+                'type' => 'logout',
+            ]);
+        }
         Auth::guard('web')->logout();
 
         $request->session()->invalidate();

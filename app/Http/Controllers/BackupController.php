@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 use App\Models\BackupSourceDirectory;
 use App\Models\BackupDestinationDirectory;
 use App\Models\BackupHistory;
@@ -142,25 +143,55 @@ class BackupController extends Controller
         ];
         $allSuccess = true;
         $errorMsg = null;
+        $keyVersion = $this->getCurrentKeyVersion();
         foreach ($sources as $src) {
             if (File::isDirectory($src)) {
                 $dirName = basename($src);
                 $timestamp = date('Ymd_His');
-                $zipFile = $destination . DIRECTORY_SEPARATOR . $dirName . '_' . $backupType . '_' . $timestamp . '.zip';
+                $tmpDir = sys_get_temp_dir();
+                $zipFile = $tmpDir . DIRECTORY_SEPARATOR . $dirName . '_' . $backupType . '_' . $timestamp . '.zip';
+                // Find the latest manifest in the destination
+                $manifestPattern = $destination . DIRECTORY_SEPARATOR . $dirName . '_manifest_*.json.enc';
+                $manifestFiles = glob($manifestPattern);
+                $lastManifest = [];
+                $latestManifest = null;
+                if ($manifestFiles) {
+                    // Sort by filename (timestamp in name)
+                    usort($manifestFiles, function($a, $b) {
+                        return strcmp($a, $b);
+                    });
+                    $latestManifest = end($manifestFiles);
+                }
+                // Decrypt latest manifest if it exists
+                if ($latestManifest && File::exists($latestManifest)) {
+                    $tmpManifest = $tmpDir . DIRECTORY_SEPARATOR . uniqid('manifest_', true) . '.json';
+                    try {
+                        $this->decryptFile($latestManifest, $tmpManifest, $keyVersion);
+                        $lastManifest = json_decode(File::get($tmpManifest), true) ?: [];
+                    } catch (\Exception $e) {
+                        Log::warning('Failed to decrypt previous manifest, treating as full backup', [
+                            'manifest' => $latestManifest,
+                            'error' => $e->getMessage(),
+                        ]);
+                        $lastManifest = [];
+                    }
+                    if (File::exists($tmpManifest)) {
+                        File::delete($tmpManifest);
+                    }
+                }
                 $history = BackupHistory::create([
                     'source_directory' => $src,
                     'destination_directory' => $destination,
-                    'filename' => basename($zipFile),
+                    'filename' => basename($zipFile) . '.enc',
                     'status' => 'pending',
                     'started_at' => now(),
                     'backup_type' => $backupType,
                     'compression_level' => $compressionLevel,
+                    'key_version' => $keyVersion,
                 ]);
                 try {
                     $zip = new \ZipArchive();
                     if ($zip->open($zipFile, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) === TRUE) {
-                        $manifestPath = $destination . DIRECTORY_SEPARATOR . $dirName . '_last_backup_manifest.json';
-                        $lastManifest = File::exists($manifestPath) ? json_decode(File::get($manifestPath), true) : [];
                         $newManifest = [];
                         $files = new \RecursiveIteratorIterator(
                             new \RecursiveDirectoryIterator($src, \RecursiveDirectoryIterator::SKIP_DOTS),
@@ -193,24 +224,73 @@ class BackupController extends Controller
                             }
                         }
                         $zip->close();
-                        File::put($manifestPath, json_encode($newManifest));
+                        // Write new manifest to temp file, then encrypt and store in destination with timestamp
+                        $tmpManifestOut = $tmpDir . DIRECTORY_SEPARATOR . uniqid('manifest_out_', true) . '.json';
+                        File::put($tmpManifestOut, json_encode($newManifest));
+                        $manifestName = $dirName . '_manifest_' . $timestamp . '.json.enc';
+                        $manifestPath = $destination . DIRECTORY_SEPARATOR . $manifestName;
+                        $tmpManifestEnc = $tmpManifestOut . '.enc';
+                        $this->encryptFile($tmpManifestOut, $tmpManifestEnc, $keyVersion);
+                        File::move($tmpManifestEnc, $manifestPath);
+                        File::delete($tmpManifestOut);
                         $size = File::size($zipFile);
                         $hash = hash_file('sha256', $zipFile);
+                        // Encrypt the zip file in temp dir
+                        $encryptedFile = $tmpDir . DIRECTORY_SEPARATOR . basename($zipFile) . '.enc';
+                        $this->encryptFile($zipFile, $encryptedFile, $keyVersion);
+                        File::delete($zipFile); // Remove unencrypted file
+                        // Move encrypted file to destination
+                        $finalEncryptedFile = $destination . DIRECTORY_SEPARATOR . basename($encryptedFile);
+                        File::move($encryptedFile, $finalEncryptedFile);
+                        $encSize = File::size($finalEncryptedFile);
+                        $encHash = hash_file('sha256', $finalEncryptedFile);
                         $history->update([
-                            'size' => $size,
+                            'size' => $encSize,
                             'status' => 'completed',
                             'completed_at' => now(),
-                            'integrity_hash' => $hash,
+                            'integrity_hash' => $encHash,
                             'integrity_verified_at' => now(),
+                            'filename' => basename($finalEncryptedFile),
+                        ]);
+                        Log::info('Backup completed (encrypted)', [
+                            'source' => $src,
+                            'destination' => $destination,
+                            'filename' => basename($finalEncryptedFile),
+                            'type' => $backupType,
+                            'compression' => $compressionLevel,
+                            'key_version' => $keyVersion,
                         ]);
                     } else {
                         throw new \Exception('Failed to create zip file.');
                     }
                 } catch (\Exception $e) {
+                    // Clean up temp files if they exist
+                    if (isset($zipFile) && file_exists($zipFile)) {
+                        File::delete($zipFile);
+                    }
+                    $encTemp = isset($encryptedFile) ? $encryptedFile : null;
+                    if ($encTemp && file_exists($encTemp)) {
+                        File::delete($encTemp);
+                    }
+                    if (isset($tmpManifestOut) && file_exists($tmpManifestOut)) {
+                        File::delete($tmpManifestOut);
+                    }
+                    if (isset($tmpManifestEnc) && file_exists($tmpManifestEnc)) {
+                        File::delete($tmpManifestEnc);
+                    }
                     $history->update([
                         'status' => 'failed',
                         'completed_at' => now(),
                         'error_message' => $e->getMessage(),
+                    ]);
+                    Log::error('Backup failed', [
+                        'source' => $src,
+                        'destination' => $destination,
+                        'filename' => isset($finalEncryptedFile) ? basename($finalEncryptedFile) : (isset($zipFile) ? basename($zipFile) : null),
+                        'type' => $backupType,
+                        'compression' => $compressionLevel,
+                        'error' => $e->getMessage(),
+                        'key_version' => $keyVersion,
                     ]);
                     $allSuccess = false;
                     $errorMsg = $e->getMessage();
@@ -224,7 +304,56 @@ class BackupController extends Controller
                 return response()->json(['success' => false, 'message' => $errorMsg ?: 'Backup failed.']);
             }
         }
-        return redirect()->back()->with('status', $allSuccess ? 'Backup completed successfully!' : 'Backup failed.');
+        if ($allSuccess) {
+            return redirect()->back()->with('status', 'Backup completed successfully!');
+        } else {
+            return redirect()->back()->withErrors(['backup' => 'Backup failed: ' . ($errorMsg ?: 'Unknown error')]);
+        }
+    }
+
+    // Key management helpers
+    private function getEncryptionKeys()
+    {
+        return config('backup.encryption_keys', []);
+    }
+    private function getCurrentKeyVersion()
+    {
+        return config('backup.current_key_version', 'v1');
+    }
+    private function getKeyByVersion($version)
+    {
+        $keys = $this->getEncryptionKeys();
+        if (!isset($keys[$version])) {
+            throw new \Exception('Encryption key version not found: ' . $version);
+        }
+        return base64_decode(preg_replace('/^base64:/', '', $keys[$version]));
+    }
+
+    // Helper: Encrypt a file with AES-256-CBC
+    private function encryptFile($inputPath, $outputPath, $keyVersion)
+    {
+        $key = $this->getKeyByVersion($keyVersion);
+        $iv = random_bytes(16);
+        $plaintext = file_get_contents($inputPath);
+        $ciphertext = openssl_encrypt($plaintext, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
+        if ($ciphertext === false) {
+            throw new \Exception('Encryption failed');
+        }
+        file_put_contents($outputPath, $iv . $ciphertext);
+    }
+
+    // Helper: Decrypt a file with AES-256-CBC
+    private function decryptFile($inputPath, $outputPath, $keyVersion)
+    {
+        $key = $this->getKeyByVersion($keyVersion);
+        $data = file_get_contents($inputPath);
+        $iv = substr($data, 0, 16);
+        $ciphertext = substr($data, 16);
+        $plaintext = openssl_decrypt($ciphertext, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
+        if ($plaintext === false) {
+            throw new \Exception('Decryption failed');
+        }
+        file_put_contents($outputPath, $plaintext);
     }
 
     // Create a new backup schedule
@@ -301,5 +430,174 @@ class BackupController extends Controller
     {
         $schedules = BackupSchedule::all();
         return view('backup.schedule-table', ['schedules' => $schedules]);
+    }
+
+    /**
+     * Return filtered backups for AJAX filtering.
+     */
+    public function filterBackups(Request $request)
+    {
+        $from = $request->input('from');
+        $to = $request->input('to');
+        $type = $request->input('type');
+        $query = BackupHistory::query();
+        if ($from) {
+            $query->whereDate('created_at', '>=', $from);
+        }
+        if ($to) {
+            $query->whereDate('created_at', '<=', $to);
+        }
+        if ($type) {
+            $query->where('backup_type', $type);
+        }
+        $backups = $query->orderByDesc('created_at')->get()->map(function($b) {
+            return [
+                'id' => $b->id,
+                'created_at' => $b->created_at->toDateTimeString(),
+                'backup_type' => $b->backup_type,
+                'filename' => $b->filename,
+                'size' => $b->size,
+                'status' => $b->status,
+            ];
+        })->values();
+        return response()->json(['success' => true, 'backups' => $backups]);
+    }
+
+    /**
+     * Restore a backup zip to a given path.
+     */
+    public function restoreBackup(Request $request)
+    {
+        $request->validate([
+            'backup_id' => 'required|exists:backup_histories,id',
+            'restore_path' => 'required|string',
+            'overwrite' => 'nullable|boolean',
+            'preserve_permissions' => 'nullable|boolean',
+        ]);
+        $backup = BackupHistory::findOrFail($request->backup_id);
+        $encPath = $backup->destination_directory . DIRECTORY_SEPARATOR . $backup->filename;
+        $restorePath = $request->restore_path;
+        $overwrite = $request->boolean('overwrite', false);
+        $preservePermissions = $request->boolean('preserve_permissions', false);
+        $keyVersion = $backup->key_version ?? 'v1';
+        // Debug: Dump available keys and key version
+        Log::debug('Restore debug', [
+            'env_BACKUP_ENCRYPTION_KEYS' => env('BACKUP_ENCRYPTION_KEYS'),
+            'parsed_keys' => json_decode(env('BACKUP_ENCRYPTION_KEYS', '{}'), true),
+            'key_version' => $keyVersion,
+        ]);
+        if (!file_exists($encPath)) {
+            Log::error('Restore failed: backup file not found', [
+                'backup_id' => $backup->id,
+                'zipPath' => $encPath,
+                'restorePath' => $restorePath,
+                'key_version' => $keyVersion,
+            ]);
+            return response()->json(['success' => false, 'message' => 'Backup file not found.']);
+        }
+        // Decrypt to a temp file
+        $tmpZip = tempnam(sys_get_temp_dir(), 'restore_') . '.zip';
+        try {
+            $this->decryptFile($encPath, $tmpZip, $keyVersion);
+        } catch (\Exception $e) {
+            Log::error('Restore decryption failed', [
+                'backup_id' => $backup->id,
+                'zipPath' => $encPath,
+                'restorePath' => $restorePath,
+                'key_version' => $keyVersion,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json(['success' => false, 'message' => 'Decryption failed: ' . $e->getMessage()]);
+        }
+        $zip = new \ZipArchive();
+        if ($zip->open($tmpZip) === TRUE) {
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $entry = $zip->getNameIndex($i);
+                $target = $restorePath . DIRECTORY_SEPARATOR . $entry;
+                if (substr($entry, -1) === '/') {
+                    if (!is_dir($target)) {
+                        mkdir($target, 0755, true);
+                    }
+                } else {
+                    $dir = dirname($target);
+                    if (!is_dir($dir)) {
+                        mkdir($dir, 0755, true);
+                    }
+                    // Skip system/hidden files like desktop.ini
+                    if (strtolower(basename($entry)) === 'desktop.ini') {
+                        continue;
+                    }
+                    if (file_exists($target) && !$overwrite) {
+                        continue;
+                    }
+                    $stream = $zip->getStream($entry);
+                    if ($stream) {
+                        $out = fopen($target, 'w');
+                        if ($out) {
+                            while (!feof($stream)) {
+                                fwrite($out, fread($stream, 8192));
+                            }
+                            fclose($out);
+                        }
+                        fclose($stream);
+                        if ($preservePermissions) {
+                            $stat = $zip->statIndex($i);
+                            if (isset($stat['mode'])) {
+                                chmod($target, $stat['mode'] & 0777);
+                            }
+                        }
+                    } else {
+                        continue;
+                    }
+                }
+            }
+            $zip->close();
+            unlink($tmpZip);
+            Log::info('Backup restored', [
+                'backup_id' => $backup->id,
+                'zipPath' => $encPath,
+                'restorePath' => $restorePath,
+                'key_version' => $keyVersion,
+            ]);
+            return response()->json(['success' => true, 'message' => 'Restore completed.']);
+        } else {
+            unlink($tmpZip);
+            Log::error('Restore failed: could not open backup archive', [
+                'backup_id' => $backup->id,
+                'zipPath' => $encPath,
+                'restorePath' => $restorePath,
+                'key_version' => $keyVersion,
+            ]);
+            return response()->json(['success' => false, 'message' => 'Failed to open backup archive.']);
+        }
+    }
+
+    /**
+     * Verify the integrity of a backup by recalculating its hash.
+     */
+    public function verifyBackupIntegrity(Request $request)
+    {
+        $request->validate([
+            'backup_id' => 'required|exists:backup_histories,id',
+        ]);
+        $backup = BackupHistory::findOrFail($request->backup_id);
+        $encPath = $backup->destination_directory . DIRECTORY_SEPARATOR . $backup->filename;
+        if (!file_exists($encPath)) {
+            return response()->json(['success' => false, 'message' => 'Backup file not found.']);
+        }
+        $hash = hash_file('sha256', $encPath);
+        $match = $backup->integrity_hash === $hash;
+        if ($match) {
+            $backup->integrity_verified_at = now();
+            $backup->save();
+        }
+        return response()->json([
+            'success' => $match,
+            'message' => $match
+                ? 'Backup is authentic and has not been tampered with.'
+                : 'WARNING: Backup file has been changed or corrupted since creation! Integrity check failed.',
+            'expected_hash' => $backup->integrity_hash,
+            'actual_hash' => $hash,
+        ]);
     }
 } 

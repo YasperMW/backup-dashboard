@@ -12,7 +12,7 @@
                     </div>
                     <div class="ml-4">
                         <h2 class="text-gray-600 text-sm">Total Backups</h2>
-                        <p class="text-2xl font-semibold text-gray-800">1,234</p>
+                        <p class="text-2xl font-semibold text-gray-800">{{ number_format($totalBackups) }}</p>
                     </div>
                 </div>
             </div>
@@ -27,7 +27,7 @@
                     </div>
                     <div class="ml-4">
                         <h2 class="text-gray-600 text-sm">Successful</h2>
-                        <p class="text-2xl font-semibold text-gray-800">1,200</p>
+                        <p class="text-2xl font-semibold text-gray-800">{{ number_format($successfulBackups) }}</p>
                     </div>
                 </div>
             </div>
@@ -42,7 +42,7 @@
                     </div>
                     <div class="ml-4">
                         <h2 class="text-gray-600 text-sm">Failed</h2>
-                        <p class="text-2xl font-semibold text-gray-800">34</p>
+                        <p class="text-2xl font-semibold text-gray-800">{{ number_format($failedBackups) }}</p>
                     </div>
                 </div>
             </div>
@@ -57,7 +57,7 @@
                     </div>
                     <div class="ml-4">
                         <h2 class="text-gray-600 text-sm">Storage Used</h2>
-                        <p class="text-2xl font-semibold text-gray-800">2.4 TB</p>
+                        <p class="text-2xl font-semibold text-gray-800">{{ $storageUsed }}</p>
                     </div>
                 </div>
             </div>
@@ -66,15 +66,41 @@
         <!-- Charts Section -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <!-- Backup History Chart -->
-            <div class="bg-white rounded-lg shadow-md p-6">
-                <h3 class="text-lg font-semibold text-gray-800 mb-4">Backup History</h3>
-                <canvas id="backupHistoryChart" height="300"></canvas>
+            <div class="bg-white rounded-lg shadow-md p-2 flex flex-col items-center justify-center" style="width:560px; height:350px; max-width:100%;">
+                <h3 class="text-lg font-semibold text-gray-800 mb-2 text-center">Backup History</h3>
+                <div style="width:90%; height:90%; display:flex; align-items:center; justify-content:center;">
+                    <canvas id="backupHistoryChart" width="350" height="300" style="display:block;"></canvas>
+                </div>
             </div>
-
             <!-- Storage Usage Chart -->
-            <div class="bg-white rounded-lg shadow-md p-6">
-                <h3 class="text-lg font-semibold text-gray-800 mb-4">Storage Usage</h3>
-                <canvas id="storageUsageChart" height="300"></canvas>
+            <div class="bg-white rounded-lg shadow-md p-2 flex flex-col items-center justify-center" style="width:560px; height:350px; max-width:100%;">
+                <h3 class="text-lg font-semibold text-gray-800 mb-2 text-center">Storage Usage</h3>
+                <div style="width:90%; height:90%; display:flex; align-items:center; justify-content:center;">
+                    <canvas id="storageUsageChart" width="300" height="300" style="display:block;"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <!-- Backup Size Trend Chart -->
+            <div class="bg-white rounded-lg shadow-md p-2 flex flex-col items-center justify-center" style="width:350px; height:350px; max-width:100%;">
+                <h3 class="text-lg font-semibold text-gray-800 mb-2 text-center">Backup Size Trend (GB)</h3>
+                <div style="width:90%; height:90%; display:flex; align-items:center; justify-content:center;">
+                    <canvas id="backupSizeTrendChart" width="300" height="300" style="display:block;"></canvas>
+                </div>
+            </div>
+            <!-- Backup Type Distribution Chart -->
+            <div class="bg-white rounded-lg shadow-md p-2 flex flex-col items-center justify-center" style="width:350px; height:350px; max-width:100%;">
+                <h3 class="text-lg font-semibold text-gray-800 mb-2 text-center">Backup Type Distribution</h3>
+                <div style="width:90%; height:90%; display:flex; align-items:center; justify-content:center;">
+                    <canvas id="backupTypeChart" width="300" height="300" style="display:block;"></canvas>
+                </div>
+            </div>
+            <!-- Backup Status Distribution Chart -->
+            <div class="bg-white rounded-lg shadow-md p-2 flex flex-col items-center justify-center" style="width:350px; height:350px; max-width:100%;">
+                <h3 class="text-lg font-semibold text-gray-800 mb-2 text-center">Backup Status Distribution</h3>
+                <div style="width:90%; height:90%; display:flex; align-items:center; justify-content:center;">
+                    <canvas id="backupStatusChart" width="300" height="300" style="display:block;"></canvas>
+                </div>
             </div>
         </div>
 
@@ -105,41 +131,58 @@
         </div>
     </div>
 
-    @push('scripts')
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        // Backup History Chart
-        const backupHistoryCtx = document.getElementById('backupHistoryChart').getContext('2d');
+    console.log('DASHBOARD CHART SCRIPT LOADED', Math.random());
+    // Debug: Output chart data to console
+    console.log('chartLabels:', @json($chartLabels));
+    console.log('chartSuccessData:', @json($chartSuccessData));
+    console.log('chartFailedData:', @json($chartFailedData));
+    console.log('sizeTrendData:', @json($sizeTrendData));
+    console.log('typeLabels:', @json($typeLabels));
+    console.log('typeCounts:', @json($typeCounts));
+    console.log('statusLabels:', @json($statusLabels));
+    console.log('statusCounts:', @json($statusCounts));
+    console.log('storageChartData:', @json($storageChartData));
+
+    // Backup History Chart
+    var backupHistoryCanvas = document.getElementById('backupHistoryChart');
+    if (backupHistoryCanvas) {
+        var backupHistoryCtx = backupHistoryCanvas.getContext('2d');
         new Chart(backupHistoryCtx, {
             type: 'line',
             data: {
-                labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                labels: @json($chartLabels),
                 datasets: [{
                     label: 'Successful Backups',
-                    data: [65, 59, 80, 81, 56, 55],
+                    data: @json($chartSuccessData),
                     borderColor: 'rgb(34, 197, 94)',
                     tension: 0.1
                 }, {
                     label: 'Failed Backups',
-                    data: [28, 48, 40, 19, 86, 27],
+                    data: @json($chartFailedData),
                     borderColor: 'rgb(239, 68, 68)',
                     tension: 0.1
                 }]
             },
             options: {
-                responsive: true,
-                maintainAspectRatio: false
+                responsive: false,
+                maintainAspectRatio: true,
+                animation: false
             }
         });
+    }
 
-        // Storage Usage Chart
-        const storageUsageCtx = document.getElementById('storageUsageChart').getContext('2d');
+    // Storage Usage Chart
+    var storageUsageCanvas = document.getElementById('storageUsageChart');
+    if (storageUsageCanvas) {
+        var storageUsageCtx = storageUsageCanvas.getContext('2d');
         new Chart(storageUsageCtx, {
             type: 'doughnut',
             data: {
-                labels: ['Used', 'Free'],
+                labels: ['Used (GB)', 'Free (GB)'],
                 datasets: [{
-                    data: [70, 30],
+                    data: [{{ $storageChartData['used'] }}, {{ $storageChartData['free'] }}],
                     backgroundColor: [
                         'rgb(147, 51, 234)',
                         'rgb(229, 231, 235)'
@@ -147,10 +190,86 @@
                 }]
             },
             options: {
-                responsive: true,
-                maintainAspectRatio: false
+                responsive: false,
+                maintainAspectRatio: true,
+                animation: false
             }
         });
+    }
+
+    // Backup Size Trend Chart
+    var backupSizeTrendCanvas = document.getElementById('backupSizeTrendChart');
+    if (backupSizeTrendCanvas) {
+        var backupSizeTrendCtx = backupSizeTrendCanvas.getContext('2d');
+        new Chart(backupSizeTrendCtx, {
+            type: 'line',
+            data: {
+                labels: @json($chartLabels),
+                datasets: [{
+                    label: 'Backup Size (GB)',
+                    data: @json($sizeTrendData),
+                    borderColor: 'rgb(59, 130, 246)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                    fill: true,
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: false,
+                maintainAspectRatio: true,
+                animation: false
+            }
+        });
+    }
+
+    // Backup Type Distribution Chart
+    var backupTypeCanvas = document.getElementById('backupTypeChart');
+    if (backupTypeCanvas) {
+        var backupTypeCtx = backupTypeCanvas.getContext('2d');
+        new Chart(backupTypeCtx, {
+            type: 'pie',
+            data: {
+                labels: @json($typeLabels),
+                datasets: [{
+                    data: @json($typeCounts),
+                    backgroundColor: [
+                        'rgb(34,197,94)', // green
+                        'rgb(59,130,246)', // blue
+                        'rgb(251,191,36)' // yellow
+                    ]
+                }]
+            },
+            options: {
+                responsive: false,
+                maintainAspectRatio: true,
+                animation: false
+            }
+        });
+    }
+
+    // Backup Status Distribution Chart
+    var backupStatusCanvas = document.getElementById('backupStatusChart');
+    if (backupStatusCanvas) {
+        var backupStatusCtx = backupStatusCanvas.getContext('2d');
+        new Chart(backupStatusCtx, {
+            type: 'pie',
+            data: {
+                labels: @json($statusLabels),
+                datasets: [{
+                    data: @json($statusCounts),
+                    backgroundColor: [
+                        'rgb(34,197,94)', // green
+                        'rgb(239,68,68)', // red
+                        'rgb(251,191,36)' // yellow
+                    ]
+                }]
+            },
+            options: {
+                responsive: false,
+                maintainAspectRatio: true,
+                animation: false
+            }
+        });
+    }
     </script>
-    @endpush
 </x-dashboard-layout>

@@ -19,5 +19,6 @@ class BackupHistory extends Model
         'error_message',
         'backup_type',
         'compression_level',
+        'key_version',
     ];
 }

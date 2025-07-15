@@ -222,12 +222,6 @@
         </div>
     </footer>
 
-    <!-- Add badge in bottom right -->
-    <div class="fixed bottom-2 right-2 z-50">
-        <a href="#" class="bg-gray-900 text-white text-xs px-3 py-1 rounded shadow flex items-center border border-gray-700">
-            Edit with <span class="ml-1 font-bold">Luvable</span>
-        </a>
-    </div>
 
 </body>
 </html>

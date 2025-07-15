@@ -3,14 +3,13 @@
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SecurityConfigurationController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\DashboardController;
 
 Route::get('/', function () {
     return view('welcome');
 });
 
-Route::get('/dashboard', function () {
-    return view('dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -32,6 +31,11 @@ Route::middleware('auth')->group(function () {
     Route::post('/backup/schedule', [\App\Http\Controllers\BackupController::class, 'createSchedule'])->name('backup.schedule.create');
     Route::get('/backup/history/fragment', [\App\Http\Controllers\BackupController::class, 'getBackupHistoryFragment'])->name('backup.history.fragment');
     Route::get('/backup/schedule/fragment', [\App\Http\Controllers\BackupController::class, 'getScheduleTableFragment'])->name('backup.schedule.fragment');
+    Route::post('/backup/filter', [\App\Http\Controllers\BackupController::class, 'filterBackups'])->name('backup.filter');
+
+    // Recovery/restore endpoints
+    Route::post('/backup/restore', [\App\Http\Controllers\BackupController::class, 'restoreBackup'])->name('backup.restore');
+    Route::post('/backup/verify-integrity', [\App\Http\Controllers\BackupController::class, 'verifyBackupIntegrity'])->name('backup.verifyIntegrity');
 
     // Anomaly Detection Routes
     Route::get('/anomaly/detection', function () {
@@ -44,9 +48,11 @@ Route::middleware('auth')->group(function () {
     })->name('recovery.index');
 
     // System Logs Routes
-    Route::get('/logs', function () {
-        return view('logs.logs');
-    })->name('logs.index');
+    Route::get('/logs', [\App\Http\Controllers\LogsController::class, 'index'])->name('logs.index');
+    Route::post('/logs/fetch', [\App\Http\Controllers\LogsController::class, 'fetchLogs'])->name('logs.fetch');
+    Route::get('/logs/export', [\App\Http\Controllers\LogsController::class, 'export'])->name('logs.export');
+    Route::post('/logs/clear', [\App\Http\Controllers\LogsController::class, 'clear'])->name('logs.clear');
+    Route::post('/logs/details', [\App\Http\Controllers\LogsController::class, 'details'])->name('logs.details');
 
     // Settings Routes
     Route::prefix('settings')->name('settings.')->group(function () {
@@ -65,6 +71,9 @@ Route::middleware('auth')->group(function () {
        
         
     });
+
+    Route::get('/login-logs', [\App\Http\Controllers\LoginLogController::class, 'index'])->name('login-logs.index');
+    Route::post('/login-logs/fetch', [\App\Http\Controllers\LoginLogController::class, 'fetch'])->name('login-logs.fetch');
 });
 
 require __DIR__.'/auth.php';
