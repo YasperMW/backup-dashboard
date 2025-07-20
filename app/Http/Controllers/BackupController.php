@@ -180,6 +180,7 @@ class BackupController extends Controller
                     }
                 }
                 $history = BackupHistory::create([
+                    'user_id' => auth()->id(),
                     'source_directory' => $src,
                     'destination_directory' => $destination,
                     'filename' => basename($zipFile) . '.enc',
@@ -316,7 +317,7 @@ class BackupController extends Controller
     {
         return config('backup.encryption_keys', []);
     }
-    private function getCurrentKeyVersion()
+    public function getCurrentKeyVersion()
     {
         return config('backup.current_key_version', 'v1');
     }
@@ -330,7 +331,7 @@ class BackupController extends Controller
     }
 
     // Helper: Encrypt a file with AES-256-CBC
-    private function encryptFile($inputPath, $outputPath, $keyVersion)
+    public function encryptFile($inputPath, $outputPath, $keyVersion)
     {
         $key = $this->getKeyByVersion($keyVersion);
         $iv = random_bytes(16);
@@ -379,6 +380,7 @@ class BackupController extends Controller
                 'enabled' => true,
                 'retention_days' => $request->retention_days,
                 'max_backups' => $request->max_backups,
+                'user_id' => auth()->id(),
             ]);
             if ($request->ajax() || $request->wantsJson()) {
                 return response()->json(['success' => true]);

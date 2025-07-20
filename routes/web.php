@@ -37,22 +37,17 @@ Route::middleware('auth')->group(function () {
     Route::post('/backup/restore', [\App\Http\Controllers\BackupController::class, 'restoreBackup'])->name('backup.restore');
     Route::post('/backup/verify-integrity', [\App\Http\Controllers\BackupController::class, 'verifyBackupIntegrity'])->name('backup.verifyIntegrity');
 
-    // Anomaly Detection Routes
-    Route::get('/anomaly/detection', function () {
-        return view('anomaly.detection');
-    })->name('anomaly.detection');
-
     // Recovery Routes
     Route::get('/recovery', function () {
         return view('recovery.recovery');
     })->name('recovery.index');
 
-    // System Logs Routes
-    Route::get('/logs', [\App\Http\Controllers\LogsController::class, 'index'])->name('logs.index');
-    Route::post('/logs/fetch', [\App\Http\Controllers\LogsController::class, 'fetchLogs'])->name('logs.fetch');
-    Route::get('/logs/export', [\App\Http\Controllers\LogsController::class, 'export'])->name('logs.export');
-    Route::post('/logs/clear', [\App\Http\Controllers\LogsController::class, 'clear'])->name('logs.clear');
-    Route::post('/logs/details', [\App\Http\Controllers\LogsController::class, 'details'])->name('logs.details');
+ // System Logs Routes
+ Route::get('/logs', [\App\Http\Controllers\LogController::class, 'index'])->name('logs.index');
+ Route::post('/logs/fetch', [\App\Http\Controllers\LogController::class, 'fetchLogs'])->name('logs.fetch');
+ Route::get('/logs/export', [\App\Http\Controllers\LogController::class, 'export'])->name('logs.export');
+ Route::post('/logs/clear', [\App\Http\Controllers\LogController::class, 'clear'])->name('logs.clear');
+ Route::post('/logs/details', [\App\Http\Controllers\LogController::class, 'details'])->name('logs.details');
 
     // Settings Routes
     Route::prefix('settings')->name('settings.')->group(function () {

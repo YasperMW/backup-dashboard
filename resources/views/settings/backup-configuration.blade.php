@@ -24,33 +24,6 @@
             </div>
         </div>
 
-        <!-- Anomaly Detection -->
-        <div class="bg-white rounded-lg shadow-sm p-6">
-            <h3 class="text-base font-medium text-gray-900 mb-4">Anomaly Detection</h3>
-            <div class="space-y-4">
-                <div>
-                    <label for="monitoring_frequency" class="block text-sm font-medium text-gray-700">Monitoring Frequency</label>
-                    <p class="mt-1 text-sm text-gray-500">Configure how often the system checks for unusual activity.</p>
-                    <select id="monitoring_frequency" name="monitoring_frequency" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                        <option value="5_minutes">Every 5 minutes</option>
-                        <option value="10_minutes">Every 10 minutes</option>
-                        <option value="30_minutes">Every 30 minutes</option>
-                        <option value="1_hour">Every hour</option>
-                        <option value="6_hours">Every 6 hours</option>
-                    </select>
-                </div>
-                <div>
-                    <label for="sensitivity_level" class="block text-sm font-medium text-gray-700">Detection Sensitivity</label>
-                    <p class="mt-1 text-sm text-gray-500">Adjust how sensitive the system is to detecting anomalies.</p>
-                    <select id="sensitivity_level" name="sensitivity_level" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                        <option value="low">Low (Fewer alerts)</option>
-                        <option value="medium">Medium (Balanced)</option>
-                        <option value="high">High (More alerts)</option>
-                    </select>
-                </div>
-            </div>
-        </div>
-
         <!-- Encryption -->
         <div class="bg-white rounded-lg shadow-sm p-6">
             <h3 class="text-base font-medium text-gray-900 mb-4">Encryption</h3>

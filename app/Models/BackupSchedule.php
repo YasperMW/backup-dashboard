@@ -15,6 +15,7 @@ class BackupSchedule extends Model
         'enabled',
         'retention_days',
         'max_backups',
+        'user_id',
     ];
     protected $casts = [
         'source_directories' => 'array',

@@ -8,20 +8,6 @@
         <p class="text-gray-400 text-sm mb-4">Prevent changes to saved files (WORM)</p>
     </div>
 
-    <!-- Anomaly Detection -->
-    <div class="mb-6">
-        <h3 class="text-xl font-semibold text-white mb-2">Anomaly Detection</h3>
-        <p class="text-gray-400 text-sm mb-4">Spot unusual activity</p>
-
-        <label for="monitoring_frequency" class="block text-gray-300 text-sm font-medium mb-2">Monitoring Frequency</label>
-        <p class="text-gray-400 text-sm mb-2">Turn this on to automatically watch for anything out of the ordinary.</p>
-        <select id="monitoring_frequency" name="monitoring_frequency" class="w-full px-4 py-3 rounded-lg bg-gray-800 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-green-500 transition duration-200">
-            <option value="5_minutes">Every 5 minutes</option>
-            <option value="10_minutes">Every 10 minutes</option>
-            <option value="30_minutes">Every 30 minutes</option>
-        </select>
-    </div>
-
     <!-- Encryption -->
     <div class="mb-8">
         <h3 class="text-xl font-semibold text-white mb-2">Encryption</h3>
