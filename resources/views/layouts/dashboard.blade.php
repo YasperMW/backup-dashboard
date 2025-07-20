@@ -50,30 +50,23 @@
     <!-- Main Content Area -->
     <div class="flex-1 flex flex-col bg-gray-100 overflow-hidden">
         <!-- Top Navigation/Header -->
-        <header class="flex items-center justify-between bg-gray-800 text-white py-2 px-3 border-b border-gray-700">
-            <!-- Search Bar -->
-            <div class="flex items-center bg-gray-700/50 backdrop-blur-sm rounded-lg px-2.5 py-1 w-64 transition-all duration-200 hover:bg-gray-700/70 focus-within:bg-gray-700/70">
-                <input type="text" placeholder="Search..." class="bg-transparent text-white placeholder-gray-400 focus:outline-none w-full text-sm">
-                <button type="submit" class="ml-2 focus:outline-none">
-                    <svg class="w-3.5 h-3.5 text-gray-400 hover:text-white transition-colors duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                    </svg>
-                </button>
-            </div>
-
-            <!-- Right side icons (Notification and Profile) -->
-            <div class="flex items-center space-x-6">
-                <!-- Notification Bell -->
+        <header class="flex items-center justify-between bg-gray-800 text-white py-4 px-3 border-b border-gray-700">
+            <!-- Left side: Notification Bell -->
+            <div class="flex items-center">
                 <a href="#" class="relative focus:outline-none">
                     <svg class="w-4 h-4 text-gray-400 hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
                     </svg>
                 </a>
+            </div>
 
-                <!-- User Profile/Avatar with Dropdown -->
-                <div class="relative" x-data="{ open: false }">
+            <!-- Right side: User Profile/Avatar with Dropdown -->
+            <div class="flex items-center space-x-6">
+                <div class="relative" x-data="{ open: false, profileModal: false }">
                     <button @click="open = !open" class="flex items-center space-x-2 focus:outline-none">
-                        <img src="{{ Auth::user()->profile_photo_url }}" alt="{{ Auth::user()->name }}" class="w-7 h-7 rounded-full border-2 border-gray-400">
+                        <span class="w-7 h-7 flex items-center justify-center rounded-full border-2 border-gray-400 bg-gray-600 text-white font-semibold uppercase">
+                            {{ strtoupper(mb_substr(Auth::user()->firstname, 0, 1) . mb_substr(Auth::user()->lastname, 0, 1)) }}
+                        </span>
                     </button>
 
                     <!-- Dropdown Menu -->
@@ -94,8 +87,8 @@
                         </div>
 
                         <!-- Menu Items -->
-                        <a href="{{ route('settings.general') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">
-                           General Settings
+                        <a href="#" @click.prevent="profileModal = true" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">
+                           View Profile
                         </a>
                        
                         <form method="POST" action="{{ route('logout') }}">
@@ -104,6 +97,21 @@
                                 Sign Out
                             </button>
                         </form>
+                    </div>
+
+                    <!-- Profile Modal -->
+                    <div x-show="profileModal" style="display: none;" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+                        <div @click.away="profileModal = false" class="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative">
+                            <button @click="profileModal = false" class="absolute top-2 right-2 text-gray-400 hover:text-gray-600 text-2xl font-bold">&times;</button>
+                            <h2 class="text-2xl font-semibold mb-4 text-gray-800">User Profile</h2>
+                            <div class="space-y-2">
+                                <div><span class="font-semibold text-gray-700">First Name:</span> <span class="text-gray-900">{{ Auth::user()->firstname }}</span></div>
+                                <div><span class="font-semibold text-gray-700">Last Name:</span> <span class="text-gray-900">{{ Auth::user()->lastname }}</span></div>
+                                <div><span class="font-semibold text-gray-700">Email:</span> <span class="text-gray-900">{{ Auth::user()->email }}</span></div>
+                                <div><span class="font-semibold text-gray-700">Created At:</span> <span class="text-gray-900">{{ Auth::user()->created_at->format('F j, Y, g:i a') }}</span></div>
+                                <!-- Add more fields as needed -->
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
