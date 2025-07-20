@@ -12,14 +12,14 @@
         <div>
             <x-input-label for="email" :value="__('Email')" />
             <x-text-input id="email" type="email" name="email" :value="old('email')" required autofocus autocomplete="username" placeholder="deniel123@gmail.com" />
-            <x-input-error for="email" class="mt-2" />
+            <x-input-error :messages="$errors->get('email')" class="mt-2" />
         </div>
 
         <!-- Password Field -->
         <div>
             <x-input-label for="password" :value="__('Password')" />
             <x-text-input id="password" type="password" name="password" required autocomplete="current-password" placeholder="••••••••" />
-            <x-input-error for="password" class="mt-2" />
+            <x-input-error :messages="$errors->get('password')" class="mt-2" />
         </div>
 
         <!-- Remember Me & Forget Password -->

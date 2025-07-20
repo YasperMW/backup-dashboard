@@ -4,6 +4,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SecurityConfigurationController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Auth\TwoFactorController;
 
 Route::get('/', function () {
     return view('welcome');
@@ -69,6 +70,12 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/login-logs', [\App\Http\Controllers\LoginLogController::class, 'index'])->name('login-logs.index');
     Route::post('/login-logs/fetch', [\App\Http\Controllers\LoginLogController::class, 'fetch'])->name('login-logs.fetch');
+
+    // Two Factor Authentication enable/disable
+    Route::post('/two-factor/enable', [TwoFactorController::class, 'enable'])->name('two-factor.enable');
+    Route::delete('/two-factor/disable', [TwoFactorController::class, 'disable'])->name('two-factor.disable');
+    Route::post('/two-factor/recovery-codes', [TwoFactorController::class, 'regenerateRecoveryCodes'])->name('two-factor.recovery-codes');
+    Route::post('/two-factor-challenge', [TwoFactorController::class, 'store'])->name('two-factor.verify');
 });
 
 require __DIR__.'/auth.php';

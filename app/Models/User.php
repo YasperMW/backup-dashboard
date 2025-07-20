@@ -9,6 +9,7 @@ use Illuminate\Notifications\Notifiable;
 use App\Services\MailService;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\App;
+use PHPGangsta_GoogleAuthenticator;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
@@ -92,5 +93,46 @@ class User extends Authenticatable implements MustVerifyEmail
         }
         
         return false;
+    }
+
+    public function generateTwoFactorSecret()
+    {
+        $g = new PHPGangsta_GoogleAuthenticator();
+        $secret = $g->createSecret();
+        $this->two_factor_secret = encrypt($secret);
+        $this->save();
+        return $secret;
+    }
+
+    public function getTwoFactorSecret()
+    {
+        return $this->two_factor_secret ? decrypt($this->two_factor_secret) : null;
+    }
+
+    public function getTwoFactorQrCodeUrl()
+    {
+        $g = new PHPGangsta_GoogleAuthenticator();
+        $appName = config('app.name', 'BackupDashboard');
+        $email = $this->email;
+        $secret = $this->getTwoFactorSecret();
+        return $g->getQRCodeGoogleUrl($appName . ':' . $email, $secret, $appName);
+    }
+
+    public function verifyTwoFactorCode($code)
+    {
+        $g = new PHPGangsta_GoogleAuthenticator();
+        $secret = $this->getTwoFactorSecret();
+        return $g->verifyCode($secret, $code, 2); // 2 = 2*30sec clock tolerance
+    }
+
+    public function generateRecoveryCodes()
+    {
+        $codes = [];
+        for ($i = 0; $i < 8; $i++) {
+            $codes[] = strtoupper(bin2hex(random_bytes(4)));
+        }
+        $this->two_factor_recovery_codes = encrypt(json_encode($codes));
+        $this->save();
+        return $codes;
     }
 }

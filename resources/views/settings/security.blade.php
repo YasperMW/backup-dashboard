@@ -6,37 +6,7 @@
         </div>
 
         <!-- Multi-Factor Authentication -->
-        <div class="bg-white rounded-lg shadow-sm p-6">
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="text-base font-medium text-gray-900">Multi-Factor Authentication</h3>
-                <button type="button" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                    Enable 2FA
-                </button>
-            </div>
-            <div class="space-y-4">
-                <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                    <div>
-                        <h4 class="text-sm font-medium text-gray-900">Authenticator App</h4>
-                        <p class="mt-1 text-sm text-gray-500">Use an authenticator app to generate verification codes.</p>
-                    </div>
-                    <div class="flex items-center">
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                            Enabled
-                        </span>
-                    </div>
-                </div>
-
-                <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                    <div>
-                        <h4 class="text-sm font-medium text-gray-900">Recovery Codes</h4>
-                        <p class="mt-1 text-sm text-gray-500">Recovery codes can be used to access your account if you lose your 2FA device.</p>
-                    </div>
-                    <button type="button" class="text-blue-600 hover:text-blue-900 text-sm font-medium">
-                        View Codes
-                    </button>
-                </div>
-            </div>
-        </div>
+        @include('profile.partials.two-factor-authentication-form')
 
         <!-- Password Settings -->
         <div class="bg-white rounded-lg shadow-sm p-6">

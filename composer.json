@@ -12,7 +12,8 @@
         "laravel/jetstream": "^5.3",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.10.1",
-        "phpmailer/phpmailer": "^6.10"
+        "phpmailer/phpmailer": "^6.10",
+        "phpgangsta/googleauthenticator": "dev-master"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
@@ -76,6 +77,6 @@
             "php-http/discovery": true
         }
     },
-    "minimum-stability": "stable",
+    "minimum-stability": "dev",
     "prefer-stable": true
 }

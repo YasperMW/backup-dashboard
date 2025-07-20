@@ -38,7 +38,6 @@ Route::middleware('guest')->group(function () {
     // Two Factor Authentication Routes
     Route::get('two-factor-challenge', [TwoFactorController::class, 'create'])
         ->name('two-factor.login');
-
     Route::post('two-factor-challenge', [TwoFactorController::class, 'store'])
         ->name('two-factor.verify');
 });

@@ -40,16 +40,13 @@ class AuthenticatedSessionController extends Controller
             ]);
         }
 
-        if (Auth::user()->two_factor_secret) {
+        if ($user && $user->two_factor_secret && $user->two_factor_confirmed_at) {
             // Store the intended URL in the session
             $request->session()->put('url.intended', route('dashboard', absolute: false));
-            
-            // Send 2FA code
-            Auth::user()->sendTwoFactorCode();
-            
+            // Store user ID for 2FA challenge
+            $request->session()->put('2fa:user:id', $user->id);
             // Log out the user until 2FA is verified
             Auth::logout();
-            
             return redirect()->route('two-factor.login');
         }
 
