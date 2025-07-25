@@ -94,6 +94,10 @@ npm run dev
 ```bash
 php artisan serve
 ```
+OR
+```bash
+composer run dev
+```
 
 Visit [http://localhost:8000](http://localhost:8000) in your browser.
 
