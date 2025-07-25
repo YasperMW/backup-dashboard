@@ -31,11 +31,11 @@
 <body class="flex items-center justify-center min-h-screen p-4 md:p-0">
     <div class="flex flex-col md:flex-row w-full max-w-6xl mx-auto bg-gray-900 rounded-lg shadow-xl overflow-hidden">
         <!-- Left Column: Image and Promotional Text -->
-        <div class="md:w-1/2 flex flex-col items-center justify-center p-0 text-white text-center bg-gray-800 relative overflow-hidden rounded-l-lg min-h-[750px]">
+        <div class="md:w-1/2 flex flex-col items-center justify-center p-0 text-white text-center bg-gray-800 relative overflow-hidden rounded-l-lg min-h-[400px]">
     <img
         src="/images/safeguardx.jpg"
         alt="SafeguardX Graphic"
-        class="w-full h-full object-contain"
+        class="w-full h-full object-cover"
         style="position: absolute; inset: 0; z-index: 0; background: #222;"
         onerror="this.onerror=null;this.src='https://placehold.co/600x400/374151/FFFFFF?text=Error+Loading+Image';"
     >
@@ -52,15 +52,13 @@
 
 
         <!-- Right Column: Content -->
-        <div class="md:w-1/2 bg-gray-900 p-8 md:p-12 flex flex-col justify-center rounded-r-lg min-h-[350px] md:min-h-[550px] lg:min-h-[650px] max-w-xl w-full mx-auto relative">
+        <div class="md:w-1/2 bg-gray-900 p-8 md:p-12 flex flex-col justify-center rounded-r-lg min-h-[350px] md:min-h-[400px] lg:min-h-[400px] max-w-xl w-full mx-auto relative">
             <!-- Back to Welcome Button (moved above the form) -->
             <a href="{{ url('/') }}" class="mb-6 self-start flex items-center space-x-2 bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition duration-200">
                 <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
                 <span>Back to Home</span>
             </a>
             {{ $slot }}
-
-        
         </div>
     </div>
 </body>

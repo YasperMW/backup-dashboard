@@ -50,15 +50,55 @@
                     <span class="font-mono text-base">{{ Auth::user()->getTwoFactorSecret() }}</span>
                 </div>
             </div>
-            <form method="POST" action="{{ route('two-factor.verify') }}" class="mt-4 flex flex-col gap-2 max-w-xs">
+            <form id="two-factor-confirm-form" method="POST" action="{{ route('settings.two-factor.confirm') }}" class="mt-4 flex flex-col gap-2 max-w-xs">
                 @csrf
                 <label for="code" class="block text-sm font-medium text-gray-700">{{ __('Enter the 6-digit code from your app:') }}</label>
                 <input type="text" name="code" id="code" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" required autofocus autocomplete="one-time-code">
                 <x-input-error :messages="$errors->get('code')" class="mt-2" />
+                <div id="two-factor-message" class="mt-2"></div>
                 <x-primary-button type="submit" class="mt-2">
                     {{ __('Confirm Two-Factor Authentication') }}
                 </x-primary-button>
             </form>
+            <script>
+const messageDiv = document.getElementById('two-factor-message');
+document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('two-factor-confirm-form');
+
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        messageDiv.innerHTML = '';
+
+        const formData = new FormData(form);
+
+        fetch(form.action, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': form.querySelector('input[name="_token"]').value,
+            },
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                messageDiv.innerHTML = `<span class="text-green-600">${data.message}</span>`;
+                // Reload the 2FA section
+                fetch('/settings/two-factor/partial')
+                    .then(resp => resp.text())
+                    .then(html => {
+                        document.getElementById('two-factor-section').innerHTML = html;
+                    });
+            } else {
+                messageDiv.innerHTML = `<span class="text-red-600">${data.message || 'An error occurred.'}</span>`;
+            }
+        })
+        .catch(() => {
+            messageDiv.innerHTML = `<span class="text-red-600">An error occurred. Please try again.</span>`;
+        });
+    });
+});
+</script>
             <form method="POST" action="{{ route('two-factor.disable') }}" class="mt-2">
                 @csrf
                 @method('DELETE')

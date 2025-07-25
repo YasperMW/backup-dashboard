@@ -70,7 +70,8 @@ class User extends Authenticatable implements MustVerifyEmail
     public function sendTwoFactorCode()
     {
         $code = random_int(100000, 999999);
-        $this->two_factor_secret = $code;
+        $this->email_verification_code = $code;
+        $this->email_verification_code_expires_at = now()->addMinutes(10);
         $this->save();
 
         $mailService = new MailService();

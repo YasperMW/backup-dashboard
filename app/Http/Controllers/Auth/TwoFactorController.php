@@ -20,6 +20,12 @@ class TwoFactorController extends Controller
 
     public function store(Request $request)
     {
+        file_put_contents(storage_path('logs/2fa.txt'), json_encode($request->all()) . PHP_EOL, FILE_APPEND);
+        \Log::debug('2FA store() request', [
+            'all' => $request->all(),
+            'method' => $request->method(),
+            'path' => $request->path(),
+        ]);
         \Log::debug('2FA store() called', [
             'session' => $request->session()->all(),
             'user_id' => Auth::id(),
@@ -50,6 +56,7 @@ class TwoFactorController extends Controller
                 'code_entered' => $request->code,
                 'ip' => $request->ip(),
             ]);
+            \Log::debug('2FA: redirecting back due to invalid code');
             return back()->withErrors(['code' => 'The provided code is invalid. Please try again.'])->withInput();
         }
         \Log::info('2FA success', [
@@ -73,11 +80,15 @@ class TwoFactorController extends Controller
         ]);
         $request->session()->forget('2fa:user:id');
 
+        // If a return_to parameter is present, redirect there (for settings page)
+        if ($request->has('return_to')) {
+            \Log::debug('2FA: redirecting to return_to', ['return_to' => $request->input('return_to')]);
+            return redirect($request->input('return_to'))->with('status', 'Two-factor authentication successful!');
+        }
+
         // Redirect to intended URL or dashboard with success message
         $intended = $request->session()->pull('url.intended', route('dashboard', absolute: false));
-        \Log::debug('2FA redirecting', [
-            'intended' => $intended,
-        ]);
+        \Log::debug('2FA: redirecting to intended', ['intended' => $intended]);
         return redirect()->intended($intended)->with('status', 'Two-factor authentication successful!');
     }
 
@@ -104,5 +115,42 @@ class TwoFactorController extends Controller
         $user = Auth::user();
         $user->generateRecoveryCodes();
         return redirect()->back()->with('status', 'recovery-codes-generated');
+    }
+
+    public function confirmFromSettings(Request $request)
+    {
+        $request->validate([
+            'code' => ['required', 'string'],
+        ]);
+
+        $user = Auth::user();
+        $secret = $user ? $user->getTwoFactorSecret() : null;
+        $code = $request->code;
+        $verifyResult = $user ? $user->verifyTwoFactorCode($code) : null;
+        \Log::debug('2FA confirmFromSettings debug', [
+            'user_id' => $user ? $user->id : null,
+            'email' => $user ? $user->email : null,
+            'secret' => $secret,
+            'code_entered' => $code,
+            'verify_result' => $verifyResult,
+        ]);
+
+        if (! $user || ! $verifyResult) {
+            if ($request->ajax()) {
+                return response()->json(['status' => 'error', 'message' => 'The provided code is invalid. Please try again.']);
+            }
+            return back()->withErrors(['code' => 'The provided code is invalid. Please try again.'])->withInput();
+        }
+
+        $user->two_factor_confirmed_at = now();
+        if (!$user->two_factor_recovery_codes) {
+            $user->generateRecoveryCodes();
+        }
+        $user->save();
+
+        if ($request->ajax()) {
+            return response()->json(['status' => 'success', 'message' => 'Two-factor authentication successful!']);
+        }
+        return redirect()->route('settings.security')->with('status', 'Two-factor authentication successful!');
     }
 } 

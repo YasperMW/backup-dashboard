@@ -20,10 +20,16 @@
                 <a href="#" id="resend-link" class="text-blue-300 hover:underline disabled:opacity-50" style="pointer-events: none; opacity: 0.5;">Resend code in <span id="resend-timer">24</span>s</a>
             </div>
             <div class="flex w-full justify-between gap-4 mt-2">
-                <button type="button" onclick="window.location='{{ route('logout') }}'" class="flex-1 py-2 rounded-lg bg-gray-400 text-[#232b3e] font-semibold text-base hover:bg-gray-500 transition">Cancel</button>
+                
+               
                 <button type="submit" class="flex-1 py-2 rounded-lg bg-green-400 text-[#232b3e] font-semibold text-base hover:bg-green-500 transition disabled:opacity-50" id="verify-btn" disabled>Verify Code</button>
             </div>
         </form>
+        <br>
+        <form action="{{ route('logout') }}" method="POST" style="display:inline;">
+                    @csrf
+                    <button type="submit" class="flex-1 py-2 rounded-lg bg-gray-400 text-[#232b3e] font-semibold text-base hover:bg-gray-500 transition">Cancel</button>
+                </form>
     </div>
     <script>
         // OTP input logic

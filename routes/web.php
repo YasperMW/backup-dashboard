@@ -76,6 +76,10 @@ Route::middleware('auth')->group(function () {
     Route::delete('/two-factor/disable', [TwoFactorController::class, 'disable'])->name('two-factor.disable');
     Route::post('/two-factor/recovery-codes', [TwoFactorController::class, 'regenerateRecoveryCodes'])->name('two-factor.recovery-codes');
     Route::post('/two-factor-challenge', [TwoFactorController::class, 'store'])->name('two-factor.verify');
+    Route::post('/settings/two-factor/confirm', [TwoFactorController::class, 'confirmFromSettings'])->name('settings.two-factor.confirm');
+    Route::get('/settings/two-factor/partial', function () {
+        return view('profile.partials.two-factor-authentication-form');
+    })->name('settings.two-factor.partial')->middleware('auth');
 });
 
 require __DIR__.'/auth.php';

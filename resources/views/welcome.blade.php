@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SafeGuardX - Secure Your Data</title>
     @vite('resources/css/app.css')
-    <!-- You might want to link a custom font like 'Inter' if used in the design -->
+    
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         body {
@@ -132,21 +132,13 @@
                         <span class="text-green-400 mr-3 text-2xl mt-1">&#10003;</span>
                         <span>24/7 proactive monitoring and advanced threat detection</span>
                     </li>
-                    <li class="flex items-start">
-                        <span class="text-green-400 mr-3 text-2xl mt-1">&#10003;</span>
-                        <span>Full compliance with SOC 2, HIPAA, and GDPR regulations</span>
-                    </li>
-                    <li class="flex items-start">
-                        <span class="text-green-400 mr-3 text-2xl mt-1">&#10003;</span>
-                        <span>99.9% uptime SLA with a generous money-back guarantee</span>
-                    </li>
+                   
                 </ul>
             </div>
 
             <!-- Right: Pricing/Trial Box -->
             <div class="md:w-1/2 flex justify-center md:justify-end">
                 <div class="bg-gray-800 p-8 rounded-xl shadow-2xl text-center w-full max-w-md border border-gray-700">
-                    <p class="text-6xl font-extrabold text-green-400 mb-4">$0</p>
                     <p class="text-gray-300 text-xl mb-8">Start your free trial today</p>
                     <div class="grid grid-cols-2 gap-y-4 text-gray-300 text-base mb-10">
                         <div class="text-left font-semibold">Storage</div>
@@ -189,7 +181,7 @@
                 <h3 class="text-lg font-semibold mb-4">Product</h3>
                 <ul class="space-y-2 text-gray-400 text-sm">
                     <li><a href="#" class="hover:text-white transition duration-200">Features</a></li>
-                    <li><a href="#" class="hover:text-white transition duration-200">Pricing</a></li>
+
                     <li><a href="#" class="hover:text-white transition duration-200">Solutions</a></li>
                     <li><a href="#" class="hover:text-white transition duration-200">Integrations</a></li>
                 </ul>

@@ -6,7 +6,10 @@
         </div>
 
         <!-- Multi-Factor Authentication -->
-        @include('profile.partials.two-factor-authentication-form')
+        <div id="two-factor-message"></div>
+        <div id="two-factor-section">
+            @include('profile.partials.two-factor-authentication-form')
+        </div>
 
         <!-- Password Settings -->
         <div class="bg-white rounded-lg shadow-sm p-6">
