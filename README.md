@@ -41,7 +41,7 @@ A Backup system built with Laravel.
 ### 2. Clone the Repository
 
 ```bash
-git clone <your-repo-url>
+git clone <https://github.com/YasperMW/backup-dashboard.git>
 cd backup-dashboard
 ```
 
