@@ -146,6 +146,3 @@ Accessible from the settings menu.
 
 ---
 
-## Support
-
-For help, open an issue or check the documentation.
