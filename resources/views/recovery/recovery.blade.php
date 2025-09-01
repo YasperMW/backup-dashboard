@@ -3,7 +3,8 @@
         display: none;
     }
 </style>
-<x-dashboard-layout>
+@extends('layouts.dashboard')
+@section('content')
     <div class="p-6">
         <!-- Backup Selection Section -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-6">
@@ -369,4 +370,4 @@
             </div>
         </div>
     </div>
-</x-dashboard-layout> 
+ @endsection
