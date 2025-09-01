@@ -1,4 +1,4 @@
-<x-dashboard-layout>
+@extends('layouts.dashboard')
     <style>
         html, body {
             height: 100%;
@@ -12,6 +12,7 @@
             overflow: auto !important;
         }
     </style>
+    @section('content')
     <div class="p-6">
         @if ($errors->has('backup'))
             <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -264,7 +265,7 @@
             </div>
         </div>
     </div>
-</x-dashboard-layout> 
+ @endsection
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     function updateManualBackupDestination() {
