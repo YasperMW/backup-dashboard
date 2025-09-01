@@ -5,12 +5,23 @@ use App\Http\Controllers\SecurityConfigurationController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Auth\TwoFactorController;
+use App\Http\Controllers\NotificationController;
 
 Route::get('/', function () {
     return view('welcome');
 });
 
 Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth', 'verified'])->name('dashboard');
+
+Route::get('/notifications', [NotificationController::class, 'index'])
+    ->name('notifications.index');
+
+Route::post('/notifications/mark-all-read', [NotificationController::class, 'markAllAsRead'])
+    ->name('notifications.markAllAsRead');
+
+Route::post('/notifications/{id}/mark-read', [NotificationController::class, 'markAsRead'])
+    ->name('notifications.markAsRead');
+
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
