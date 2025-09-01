@@ -1,4 +1,6 @@
-<x-dashboard-layout>
+@extends('layouts.dashboard')
+
+@section('content')
     <div class="p-6">
         <!-- Log Filters Section -->
         <form method="GET" action="{{ route('logs.index') }}">
@@ -210,4 +212,4 @@
             });
         </script>
     </div>
-</x-dashboard-layout> 
+@endsection
