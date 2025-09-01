@@ -1,4 +1,6 @@
-<x-dashboard-layout>
+@extends('layouts.dashboard')
+
+@section('content')
     <div class="flex h-full">
         <!-- Settings Navigation Sidebar -->
         <div x-data="{ open: true }" class="relative h-full">
@@ -51,4 +53,4 @@
             {{ $slot }}
         </div>
     </div>
-</x-dashboard-layout> 
+ @endsection
