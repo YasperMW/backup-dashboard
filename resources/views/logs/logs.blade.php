@@ -2,6 +2,7 @@
 
 @section('content')
     <div class="p-6">
+        
         <!-- Log Filters Section -->
         <form method="GET" action="{{ route('logs.index') }}">
             <div class="bg-white rounded-lg shadow-md p-6 mb-6">
@@ -11,55 +12,62 @@
                     <!-- Date Range Start -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
-                        <input type="date" name="start_date" value="{{ request('start_date') }}" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <input type="date" name="start_date" value="{{ request('start_date') }}"
+                            class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
 
                     <!-- Date Range End -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">End Date</label>
-                        <input type="date" name="end_date" value="{{ request('end_date') }}" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <input type="date" name="end_date" value="{{ request('end_date') }}"
+                            class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
 
                     <!-- Log Type -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Log Type</label>
-                        <select name="type" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <select name="type"
+                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                             <option value="">All Types</option>
+                            <option value="login" {{ request('type') == 'login' ? 'selected' : '' }}>Login</option>
                             <option value="system" {{ request('type') == 'system' ? 'selected' : '' }}>System</option>
-                            <option value="backup" {{ request('type') == 'backup' ? 'selected' : '' }}>Backup</option>
                             <option value="security" {{ request('type') == 'security' ? 'selected' : '' }}>Security</option>
                             <option value="error" {{ request('type') == 'error' ? 'selected' : '' }}>Error</option>
+                            <option value="backup" {{ request('type') == 'backup' ? 'selected' : '' }}>Backup</option>
+                            <option value="failed_job" {{ request('type') == 'failed_job' ? 'selected' : '' }}>Failed Jobs</option>
                         </select>
                     </div>
 
-                    <!-- Severity Level -->
+                    <!-- Unified Severity -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Severity Level</label>
-                        <select name="severity" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option value="">All Levels</option>
-                            <option value="critical" {{ request('severity') == 'critical' ? 'selected' : '' }}>Critical</option>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Severity</label>
+                        <select name="severity"
+                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="">All Severities</option>
+                            <option value="info" {{ request('severity') == 'info' ? 'selected' : '' }}>Info</option>
                             <option value="error" {{ request('severity') == 'error' ? 'selected' : '' }}>Error</option>
                             <option value="warning" {{ request('severity') == 'warning' ? 'selected' : '' }}>Warning</option>
-                            <option value="info" {{ request('severity') == 'info' ? 'selected' : '' }}>Info</option>
-                            <option value="debug" {{ request('severity') == 'debug' ? 'selected' : '' }}>Debug</option>
                         </select>
                     </div>
 
                     <!-- Search -->
-                    <div>
+                    <div class="md:col-span-2">
                         <label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
-                        <input type="text" name="search" value="{{ request('search') }}" placeholder="Search logs..." class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 pl-10">
+                        <input type="text" name="search" value="{{ request('search') }}"
+                            placeholder="Search email, IP, filename, directory..."
+                            class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
-
                 </div>
 
                 <div class="mt-4 flex justify-end">
-                    <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                    Apply Filters
+                    <button type="submit"
+                            class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                        Apply Filters
                     </button>
                 </div>
             </div>
         </form>
+
 
         <!-- Logs Table -->
         <div class="bg-white rounded-lg shadow-md overflow-hidden">
