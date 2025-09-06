@@ -2,6 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Notifications\BackupCompleted;
+use App\Notifications\BackupFailed;
+use App\Notifications\RestoreCompleted;
+use App\Notifications\IntegrityCheckFailed;
+use App\Notifications\ScheduleCreated;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
@@ -253,6 +258,10 @@ class BackupController extends Controller
                             'integrity_verified_at' => now(),
                             'filename' => basename($finalEncryptedFile),
                         ]);
+
+                        // Notify the user of successful backup
+                        auth()->user()->notify(new \App\Notifications\BackupCompleted($history));
+
                         Log::info('Backup completed (encrypted)', [
                             'source' => $src,
                             'destination' => $destination,
@@ -284,6 +293,11 @@ class BackupController extends Controller
                         'completed_at' => now(),
                         'error_message' => $e->getMessage(),
                     ]);
+
+                    // Notify the user of failed backup
+                    auth()->user()->notify(new \App\Notifications\BackupFailed($history, $e->getMessage()));
+
+
                     Log::error('Backup failed', [
                         'source' => $src,
                         'destination' => $destination,
@@ -358,41 +372,54 @@ class BackupController extends Controller
     }
 
     // Create a new backup schedule
+    
     public function createSchedule(Request $request)
-    {
-        $request->validate([
-            'frequency' => 'required|in:daily,weekly,monthly',
-            'time' => 'required',
-            'source_directories' => 'required|array',
-            'destination_directory' => 'required|string',
-        ]);
-        $daysOfWeek = null;
-        if ($request->frequency === 'weekly') {
-            $daysOfWeek = is_array($request->days_of_week) ? implode(',', $request->days_of_week) : null;
-        }
-        try {
-            \App\Models\BackupSchedule::create([
-                'frequency' => $request->frequency,
-                'time' => $request->time,
-                'days_of_week' => $daysOfWeek,
-                'source_directories' => $request->source_directories,
-                'destination_directory' => $request->destination_directory,
-                'enabled' => true,
-                'retention_days' => $request->retention_days,
-                'max_backups' => $request->max_backups,
-                'user_id' => auth()->id(),
-            ]);
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json(['success' => true]);
-            }
-            return redirect()->route('backup.management')->with('status', 'Backup schedule created successfully!');
-        } catch (\Exception $e) {
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json(['success' => false, 'message' => $e->getMessage()]);
-            }
-            return redirect()->route('backup.management')->withErrors(['schedule' => $e->getMessage()]);
-        }
+{
+    $request->validate([
+        'frequency' => 'required|in:daily,weekly,monthly',
+        'time' => 'required',
+        'source_directories' => 'required|array',
+        'destination_directory' => 'required|string',
+    ]);
+
+    $daysOfWeek = null;
+    if ($request->frequency === 'weekly') {
+        $daysOfWeek = is_array($request->days_of_week) ? implode(',', $request->days_of_week) : null;
     }
+
+    try {
+        $schedule = \App\Models\BackupSchedule::create([
+            'frequency' => $request->frequency,
+            'time' => $request->time,
+            'days_of_week' => $daysOfWeek,
+            'source_directories' => $request->source_directories,
+            'destination_directory' => $request->destination_directory,
+            'enabled' => true,
+            'retention_days' => $request->retention_days,
+            'max_backups' => $request->max_backups,
+            'user_id' => auth()->id(),
+        ]);
+
+        // ✅ Notify user about successful schedule creation
+        auth()->user()->notify(new \App\Notifications\ScheduleCreated($schedule));
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json(['success' => true, 'message' => 'Backup schedule created successfully!']);
+        }
+
+        return redirect()->route('backup.management')->with('status', 'Backup schedule created successfully!');
+    } catch (\Exception $e) {
+        // ✅ Notify user about failure
+        auth()->user()->notify(new \App\Notifications\ScheduleFailed($e->getMessage()));
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()]);
+        }
+
+        return redirect()->route('backup.management')->withErrors(['schedule' => $e->getMessage()]);
+    }
+}
+
 
     // Get the current backup configuration (for AJAX or settings page)
     public function getBackupConfig()
@@ -469,137 +496,150 @@ class BackupController extends Controller
      * Restore a backup zip to a given path.
      */
     public function restoreBackup(Request $request)
-    {
-        $request->validate([
-            'backup_id' => 'required|exists:backup_histories,id',
-            'restore_path' => 'required|string',
-            'overwrite' => 'nullable|boolean',
-            'preserve_permissions' => 'nullable|boolean',
-        ]);
-        $backup = BackupHistory::findOrFail($request->backup_id);
-        $encPath = $backup->destination_directory . DIRECTORY_SEPARATOR . $backup->filename;
-        $restorePath = $request->restore_path;
-        $overwrite = $request->boolean('overwrite', false);
-        $preservePermissions = $request->boolean('preserve_permissions', false);
-        $keyVersion = $backup->key_version ?? 'v1';
-        // Debug: Dump available keys and key version
-        Log::debug('Restore debug', [
-            'env_BACKUP_ENCRYPTION_KEYS' => env('BACKUP_ENCRYPTION_KEYS'),
-            'parsed_keys' => json_decode(env('BACKUP_ENCRYPTION_KEYS', '{}'), true),
-            'key_version' => $keyVersion,
-        ]);
-        if (!file_exists($encPath)) {
-            Log::error('Restore failed: backup file not found', [
-                'backup_id' => $backup->id,
-                'zipPath' => $encPath,
-                'restorePath' => $restorePath,
-                'key_version' => $keyVersion,
+        {
+            $request->validate([
+                'backup_id' => 'required|exists:backup_histories,id',
+                'restore_path' => 'required|string',
+                'overwrite' => 'nullable|boolean',
+                'preserve_permissions' => 'nullable|boolean',
             ]);
-            return response()->json(['success' => false, 'message' => 'Backup file not found.']);
-        }
-        // Decrypt to a temp file
-        $tmpZip = tempnam(sys_get_temp_dir(), 'restore_') . '.zip';
-        try {
-            $this->decryptFile($encPath, $tmpZip, $keyVersion);
-        } catch (\Exception $e) {
-            Log::error('Restore decryption failed', [
-                'backup_id' => $backup->id,
-                'zipPath' => $encPath,
-                'restorePath' => $restorePath,
-                'key_version' => $keyVersion,
-                'error' => $e->getMessage(),
-            ]);
-            return response()->json(['success' => false, 'message' => 'Decryption failed: ' . $e->getMessage()]);
-        }
-        $zip = new \ZipArchive();
-        if ($zip->open($tmpZip) === TRUE) {
-            for ($i = 0; $i < $zip->numFiles; $i++) {
-                $entry = $zip->getNameIndex($i);
-                $target = $restorePath . DIRECTORY_SEPARATOR . $entry;
-                if (substr($entry, -1) === '/') {
-                    if (!is_dir($target)) {
-                        mkdir($target, 0755, true);
-                    }
-                } else {
-                    $dir = dirname($target);
-                    if (!is_dir($dir)) {
-                        mkdir($dir, 0755, true);
-                    }
-                    // Skip system/hidden files like desktop.ini
-                    if (strtolower(basename($entry)) === 'desktop.ini') {
-                        continue;
-                    }
-                    if (file_exists($target) && !$overwrite) {
-                        continue;
-                    }
-                    $stream = $zip->getStream($entry);
-                    if ($stream) {
-                        $out = fopen($target, 'w');
-                        if ($out) {
-                            while (!feof($stream)) {
-                                fwrite($out, fread($stream, 8192));
-                            }
-                            fclose($out);
-                        }
-                        fclose($stream);
-                        if ($preservePermissions) {
-                            $stat = $zip->statIndex($i);
-                            if (isset($stat['mode'])) {
-                                chmod($target, $stat['mode'] & 0777);
-                            }
-                        }
+
+            $backup = BackupHistory::findOrFail($request->backup_id);
+            $encPath = $backup->destination_directory . DIRECTORY_SEPARATOR . $backup->filename;
+            $restorePath = $request->restore_path;
+            $overwrite = $request->boolean('overwrite', false);
+            $preservePermissions = $request->boolean('preserve_permissions', false);
+            $keyVersion = $backup->key_version ?? 'v1';
+
+            // Check if backup file exists
+            if (!file_exists($encPath)) {
+                Log::error('Restore failed: backup file not found', [
+                    'backup_id' => $backup->id,
+                    'zipPath' => $encPath,
+                    'restorePath' => $restorePath,
+                    'key_version' => $keyVersion,
+                ]);
+
+                auth()->user()->notify(new \App\Notifications\RestoreFailed($backup, 'Backup file not found.'));
+                return response()->json(['success' => false, 'message' => 'Backup file not found.']);
+            }
+
+            // Decrypt to a temp file
+            $tmpZip = tempnam(sys_get_temp_dir(), 'restore_') . '.zip';
+            try {
+                $this->decryptFile($encPath, $tmpZip, $keyVersion);
+            } catch (\Exception $e) {
+                Log::error('Restore decryption failed', [
+                    'backup_id' => $backup->id,
+                    'zipPath' => $encPath,
+                    'restorePath' => $restorePath,
+                    'key_version' => $keyVersion,
+                    'error' => $e->getMessage(),
+                ]);
+
+                auth()->user()->notify(new \App\Notifications\RestoreFailed($backup, $e->getMessage()));
+                return response()->json(['success' => false, 'message' => 'Decryption failed: ' . $e->getMessage()]);
+            }
+
+            // Open the zip
+            $zip = new \ZipArchive();
+            if ($zip->open($tmpZip) === TRUE) {
+                for ($i = 0; $i < $zip->numFiles; $i++) {
+                    $entry = $zip->getNameIndex($i);
+                    $target = $restorePath . DIRECTORY_SEPARATOR . $entry;
+
+                    if (substr($entry, -1) === '/') {
+                        if (!is_dir($target)) mkdir($target, 0755, true);
                     } else {
-                        continue;
+                        $dir = dirname($target);
+                        if (!is_dir($dir)) mkdir($dir, 0755, true);
+
+                        // Skip system/hidden files
+                        if (strtolower(basename($entry)) === 'desktop.ini') continue;
+
+                        if (file_exists($target) && !$overwrite) continue;
+
+                        $stream = $zip->getStream($entry);
+                        if ($stream) {
+                            $out = fopen($target, 'w');
+                            if ($out) {
+                                while (!feof($stream)) fwrite($out, fread($stream, 8192));
+                                fclose($out);
+                            }
+                            fclose($stream);
+
+                            if ($preservePermissions) {
+                                $stat = $zip->statIndex($i);
+                                if (isset($stat['mode'])) chmod($target, $stat['mode'] & 0777);
+                            }
+                        }
                     }
                 }
+
+                $zip->close();
+                unlink($tmpZip);
+
+                Log::info('Backup restored', [
+                    'backup_id' => $backup->id,
+                    'zipPath' => $encPath,
+                    'restorePath' => $restorePath,
+                    'key_version' => $keyVersion,
+                ]);
+
+                auth()->user()->notify(new \App\Notifications\RestoreCompleted($backup));
+                return response()->json(['success' => true, 'message' => 'Restore completed successfully.']);
+            } else {
+                unlink($tmpZip);
+
+                Log::error('Restore failed: could not open backup archive', [
+                    'backup_id' => $backup->id,
+                    'zipPath' => $encPath,
+                    'restorePath' => $restorePath,
+                    'key_version' => $keyVersion,
+                ]);
+
+                auth()->user()->notify(new \App\Notifications\RestoreFailed($backup, 'Failed to open backup archive.'));
+                return response()->json(['success' => false, 'message' => 'Failed to open backup archive.']);
             }
-            $zip->close();
-            unlink($tmpZip);
-            Log::info('Backup restored', [
-                'backup_id' => $backup->id,
-                'zipPath' => $encPath,
-                'restorePath' => $restorePath,
-                'key_version' => $keyVersion,
-            ]);
-            return response()->json(['success' => true, 'message' => 'Restore completed.']);
-        } else {
-            unlink($tmpZip);
-            Log::error('Restore failed: could not open backup archive', [
-                'backup_id' => $backup->id,
-                'zipPath' => $encPath,
-                'restorePath' => $restorePath,
-                'key_version' => $keyVersion,
-            ]);
-            return response()->json(['success' => false, 'message' => 'Failed to open backup archive.']);
         }
-    }
+
 
     /**
      * Verify the integrity of a backup by recalculating its hash.
      */
     public function verifyBackupIntegrity(Request $request)
-    {
-        $request->validate([
-            'backup_id' => 'required|exists:backup_histories,id',
-        ]);
-        $backup = BackupHistory::findOrFail($request->backup_id);
-        $encPath = $backup->destination_directory . DIRECTORY_SEPARATOR . $backup->filename;
-        if (!file_exists($encPath)) {
-            return response()->json(['success' => false, 'message' => 'Backup file not found.']);
+        {
+            $request->validate([
+                'backup_id' => 'required|exists:backup_histories,id',
+            ]);
+
+            $backup = BackupHistory::findOrFail($request->backup_id);
+            $encPath = $backup->destination_directory . DIRECTORY_SEPARATOR . $backup->filename;
+
+            if (!file_exists($encPath)) {
+                return response()->json(['success' => false, 'message' => 'Backup file not found.']);
+            }
+
+            // Calculate hash and check integrity
+            $hash = hash_file('sha256', $encPath);
+            $match = $backup->integrity_hash === $hash;
+
+            if ($match) {
+                $backup->integrity_verified_at = now();
+                $backup->save();
+            } else {
+                // Notify user that integrity check failed
+                auth()->user()->notify(new \App\Notifications\IntegrityCheckFailed($backup));
+            }
+
+            return response()->json([
+                'success' => $match,
+                'message' => $match
+                    ? 'Backup is authentic and has not been tampered with.'
+                    : 'WARNING: Backup file has been changed or corrupted since creation! Integrity check failed.',
+                'expected_hash' => $backup->integrity_hash,
+                'actual_hash' => $hash,
+            ]);
         }
-        $hash = hash_file('sha256', $encPath);
-        $match = $backup->integrity_hash === $hash;
-        if ($match) {
-            $backup->integrity_verified_at = now();
-            $backup->save();
-        }
-        return response()->json([
-            'success' => $match,
-            'message' => $match
-                ? 'Backup is authentic and has not been tampered with.'
-                : 'WARNING: Backup file has been changed or corrupted since creation! Integrity check failed.',
-            'expected_hash' => $backup->integrity_hash,
-            'actual_hash' => $hash,
-        ]);
-    }
+
 } 
