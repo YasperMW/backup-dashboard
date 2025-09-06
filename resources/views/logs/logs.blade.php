@@ -58,30 +58,14 @@
                             class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
                 </div>
-
-                <div class="mt-4 flex justify-end">
-                    <button type="submit"
-                            class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                        Apply Filters
-                    </button>
-                </div>
             </div>
         </form>
-
 
         <!-- Logs Table -->
         <div class="bg-white rounded-lg shadow-md overflow-hidden">
             <div class="p-6 border-b border-gray-200">
                 <div class="flex items-center justify-between">
                     <h2 class="text-xl font-semibold text-gray-800">System Logs</h2>
-                    <div class="flex space-x-2">
-                        <button class="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
-                            Export
-                        </button>
-                        <button class="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
-                            Clear Logs
-                        </button>
-                    </div>
                 </div>
             </div>
             <div class="overflow-x-auto">
@@ -93,7 +77,7 @@
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Severity</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Message</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User </th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
@@ -159,7 +143,7 @@
                     <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
                         <div>
                             <p class="text-sm text-gray-700">
-                                Showing <span class="font-medium">1</span> to <span class="font-medium">3</span> of <span class="font-medium">12</span> results
+                                Showing <span class="font-medium">{{ $logs->count() }}</span> {{ Str::plural('result', $logs->count()) }}
                             </p>
                         </div>
                         <div>
@@ -202,6 +186,7 @@
                 </div>
             </div>
         </div>
+
         <script>
             function showLogDetails(log) {
                 let html = '';
@@ -214,9 +199,23 @@
             function closeLogDetails() {
                 document.getElementById('logDetailsModal').classList.add('hidden');
             }
-            // Optional: Close modal on background click
+            // Close modal on background click
             document.getElementById('logDetailsModal').addEventListener('click', function(e) {
                 if (e.target === this) closeLogDetails();
+            });
+
+            // Auto-submit form on filter change
+            document.addEventListener('DOMContentLoaded', function () {
+                const form = document.querySelector('form[action="{{ route('logs.index') }}"]');
+                if (!form) return;
+
+                const filterElements = form.querySelectorAll('input[name], select[name]');
+
+                filterElements.forEach(element => {
+                    element.addEventListener('change', () => {
+                        form.submit();
+                    });
+                });
             });
         </script>
     </div>
