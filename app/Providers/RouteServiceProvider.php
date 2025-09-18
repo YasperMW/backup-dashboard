@@ -24,8 +24,19 @@ class RouteServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // API rate limiting
         RateLimiter::for('api', function (Request $request) {
             return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+        });
+
+        // OTP rate limiting
+        RateLimiter::for('otp', function (Request $request) {
+            return [
+                // Max 3 attempts per 1 minute per IP
+                Limit::perMinute(3)->by($request->ip()),
+                // Max 5 attempts per 10 minutes per email
+                Limit::perMinutes(10, 5)->by($request->email),
+            ];
         });
 
         $this->routes(function () {

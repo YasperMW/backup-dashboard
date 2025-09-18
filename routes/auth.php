@@ -10,6 +10,7 @@ use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\Auth\TwoFactorController;
+use App\Http\Controllers\Auth\OtpVerificationController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -23,14 +24,29 @@ Route::middleware('guest')->group(function () {
 
     Route::post('login', [AuthenticatedSessionController::class, 'store']);
 
+    // Password reset with OTP flow
     Route::get('forgot-password', [PasswordResetLinkController::class, 'create'])
         ->name('password.request');
 
     Route::post('forgot-password', [PasswordResetLinkController::class, 'store'])
         ->name('password.email');
 
+    // OTP verification routes with rate limiting
+    Route::middleware(['throttle:otp'])->group(function () {
+        Route::get('verify-otp', [OtpVerificationController::class, 'showVerifyForm'])
+            ->name('password.otp.verify');
+            
+        Route::post('verify-otp', [OtpVerificationController::class, 'verify'])
+            ->name('password.otp.verify.submit');
+            
+        Route::post('resend-otp', [OtpVerificationController::class, 'resend'])
+            ->name('password.otp.resend');
+    });
+
+    // These routes are used after OTP verification
     Route::get('reset-password/{token}', [NewPasswordController::class, 'create'])
-        ->name('password.reset');
+        ->name('password.reset')
+        ->where(['token' => '.*']); // Allow any characters in the token
 
     Route::post('reset-password', [NewPasswordController::class, 'store'])
         ->name('password.store');
@@ -64,7 +80,7 @@ Route::middleware('auth')->group(function () {
 
     Route::post('confirm-password', [ConfirmablePasswordController::class, 'store']);
 
-    Route::put('password', [PasswordController::class, 'update'])->name('password.update');
+    Route::post('password', [PasswordController::class, 'update'])->name('password.update');
 
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
         ->name('logout');

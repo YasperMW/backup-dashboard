@@ -2,10 +2,13 @@
 
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SecurityConfigurationController;
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\DashboardController;
+use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\TwoFactorController;
 use App\Http\Controllers\NotificationController;
+
+// Include test routes for debugging
+require __DIR__.'/test.php';
 
 Route::get('/', function () {
     return view('welcome');

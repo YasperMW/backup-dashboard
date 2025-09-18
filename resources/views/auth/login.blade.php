@@ -1,4 +1,9 @@
 <x-auth-layout>
+    @if (session('status'))
+        <div class="mb-4 font-medium text-sm text-green-600 text-center">
+            {{ session('status') }}
+        </div>
+    @endif
     <h1 class="text-white text-4xl font-bold mb-4 text-center md:text-left">WELCOME!</h1>
     <p class="text-gray-400 mb-8 text-center md:text-left">
         Don't have an account?
@@ -24,10 +29,7 @@
 
         <!-- Remember Me & Forget Password -->
         <div class="flex items-center justify-between">
-            <label for="remember_me" class="inline-flex items-center">
-                <input id="remember_me" type="checkbox" class="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-600 rounded" name="remember">
-                <span class="ml-2 text-sm text-gray-400">{{ __('Remember me') }}</span>
-            </label>
+            
 
             @if (Route::has('password.request'))
                 <a class="text-sm text-blue-500 hover:underline" href="{{ route('password.request') }}">
