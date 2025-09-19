@@ -20,7 +20,7 @@
     <div class="container mx-auto flex justify-between items-center px-4 md:px-0">
       <!-- Logo + Brand -->
       <div class="flex items-center space-x-2">
-<img src="{{ asset('storage/images/logo.png') }}" alt="SafeGuardX Logo" class="h-20 w-20 object-contain">
+<img src="{{ asset('storage/logo.png') }}" alt="SafeGuardX Logo" class="h-20 w-20 object-contain">
         <span class="text-8xl font-extrabold text-green-400">SafeGuardX</span>
       </div>
 
@@ -33,7 +33,7 @@
   </nav>
 
   <!-- Hero Section -->
-<header class="pt-16 pb-4 bg-cover bg-center relative" style="background-image: url('{{ asset('storage/images/image.png') }}');"
+<header class="pt-16 pb-4 bg-cover bg-center relative" style="background-image: url('{{ asset('storage/image.png') }}');"
    
     <div class="absolute inset-0 bg-black/70"></div>
 
@@ -161,7 +161,7 @@
   </section>
 
   <!-- Call to Action Section -->
-   <section class="bg-green-700 py-16 md:py-24 text-center" class="absolute inset-0 opacity-80" class="pt-16 pb-4 bg-cover bg-center relative" style="background-image: url('{{ asset('storage/images/foot-background.jpg') }}');">
+   <section class="bg-green-700 py-16 md:py-24 text-center" class="absolute inset-0 opacity-80" class="pt-16 pb-4 bg-cover bg-center relative" style="background-image: url('{{ asset('storage/foot-background.jpg') }}');">
     <div class="container mx-auto px-4 md:px-0">
       <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-6">Ready to Secure Your Digital Future?</h2>
       <p class="text-green-100 text-lg md:text-xl mb-10 max-w-4xl mx-auto leading-relaxed">
