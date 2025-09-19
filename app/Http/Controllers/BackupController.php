@@ -105,226 +105,215 @@ class BackupController extends Controller
     }
 
     // Handle the backup form submission
-    public function startBackup(Request $request)
-    {
-        $request->validate([
-            'source_directories' => 'required|array',
-            'storage_location' => 'required|string',
-            // destination_directory is only required for local
-        ]);
-        $sources = $request->input('source_directories');
-        $storageLocation = $request->input('storage_location');
-        $backupType = BackupConfiguration::first()->backup_type ?? 'full';
-        if ($request->has('backup_type')) {
-            $backupType = $request->input('backup_type');
-        }
-        if ($storageLocation === 'local') {
-            $request->validate([
-                'destination_directory' => 'required|string',
-            ]);
-            $destination = $request->input('destination_directory');
-        } else {
-            $destination = $storageLocation;
-        }
-        if ($storageLocation === 'local' && !File::exists($destination)) {
-            File::makeDirectory($destination, 0755, true);
-        }
-        $compressionLevel = BackupConfiguration::first()->compression_level ?? 'none';
-        if ($request->has('compression_level')) {
-            $compressionLevel = $request->input('compression_level');
-        }
-        // Map compression level to ZipArchive constants
-        $compressionMap = [
-            'none' => \ZipArchive::CM_STORE,
-            'low' => \ZipArchive::CM_DEFLATE,
-            'medium' => \ZipArchive::CM_DEFLATE,
-            'high' => \ZipArchive::CM_DEFLATE,
-        ];
-        $compressionOptions = [
-            'none' => 0,
-            'low' => 1,
-            'medium' => 6,
-            'high' => 9,
-        ];
-        $allSuccess = true;
-        $errorMsg = null;
-        $keyVersion = $this->getCurrentKeyVersion();
-        foreach ($sources as $src) {
-            if (File::isDirectory($src)) {
-                $dirName = basename($src);
-                $timestamp = date('Ymd_His');
-                $tmpDir = sys_get_temp_dir();
-                $zipFile = $tmpDir . DIRECTORY_SEPARATOR . $dirName . '_' . $backupType . '_' . $timestamp . '.zip';
-                // Find the latest manifest in the destination
-                $manifestPattern = $destination . DIRECTORY_SEPARATOR . $dirName . '_manifest_*.json.enc';
-                $manifestFiles = glob($manifestPattern);
-                $lastManifest = [];
-                $latestManifest = null;
-                if ($manifestFiles) {
-                    // Sort by filename (timestamp in name)
-                    usort($manifestFiles, function($a, $b) {
-                        return strcmp($a, $b);
-                    });
-                    $latestManifest = end($manifestFiles);
+  public function startBackup(Request $request)
+{
+    $request->validate([
+        'source_directories'    => 'required|array',
+        'storage_location'      => 'nullable|string', // 'local', 'remote', or 'both'
+        'destination_directory' => 'nullable|string', // for local backups
+        'backup_type'           => 'nullable|string',
+        'compression_level'     => 'nullable|string',
+    ]);
+
+    $sources         = $request->input('source_directories');
+    $storageLocation = $request->input('storage_location', 'both'); // default to both
+    $backupType      = $request->input('backup_type', BackupConfiguration::first()->backup_type ?? 'full');
+    $compressionLevel= $request->input('compression_level', BackupConfiguration::first()->compression_level ?? 'none');
+
+    $keyVersion = $this->getCurrentKeyVersion();
+    $compressionMap = [
+        'none'   => \ZipArchive::CM_STORE,
+        'low'    => \ZipArchive::CM_DEFLATE,
+        'medium' => \ZipArchive::CM_DEFLATE,
+        'high'   => \ZipArchive::CM_DEFLATE,
+    ];
+    $compressionOptions = [
+        'none'   => 0,
+        'low'    => 1,
+        'medium' => 6,
+        'high'   => 9,
+    ];
+
+    $allSuccess = true;
+    $errorMsg   = null;
+
+    foreach ($sources as $src) {
+        if (!\File::isDirectory($src)) continue;
+
+        $dirName   = basename($src);
+        $timestamp = date('Ymd_His');
+        $tmpDir    = sys_get_temp_dir();
+        $zipFile   = $tmpDir . DIRECTORY_SEPARATOR . "{$dirName}_{$backupType}_{$timestamp}.zip";
+
+        try {
+            // 1️⃣ Create ZIP
+            $zip = new \ZipArchive();
+            if ($zip->open($zipFile, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+                throw new \Exception("Failed to create zip file for {$src}");
+            }
+
+            $files = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($src, \RecursiveDirectoryIterator::SKIP_DOTS),
+                \RecursiveIteratorIterator::SELF_FIRST
+            );
+
+            foreach ($files as $file) {
+                $filePath = $file->getRealPath();
+                $relativePath = substr($filePath, strlen($src) + 1);
+
+                if ($file->isDir()) {
+                    $zip->addEmptyDir($relativePath);
+                    continue;
                 }
-                // Decrypt latest manifest if it exists
-                if ($latestManifest && File::exists($latestManifest)) {
-                    $tmpManifest = $tmpDir . DIRECTORY_SEPARATOR . uniqid('manifest_', true) . '.json';
-                    try {
-                        $this->decryptFile($latestManifest, $tmpManifest, $keyVersion);
-                        $lastManifest = json_decode(File::get($tmpManifest), true) ?: [];
-                    } catch (\Exception $e) {
-                        Log::warning('Failed to decrypt previous manifest, treating as full backup', [
-                            'manifest' => $latestManifest,
-                            'error' => $e->getMessage(),
-                        ]);
-                        $lastManifest = [];
-                    }
-                    if (File::exists($tmpManifest)) {
-                        File::delete($tmpManifest);
-                    }
+
+                $zip->addFile($filePath, $relativePath);
+
+                if ($compressionLevel !== 'none') {
+                    $zip->setCompressionName(
+                        $relativePath,
+                        $compressionMap[$compressionLevel],
+                        $compressionOptions[$compressionLevel]
+                    );
                 }
-                $history = BackupHistory::create([
-                    'user_id' => auth()->id(),
-                    'source_directory' => $src,
-                    'destination_directory' => $destination,
-                    'filename' => basename($zipFile) . '.enc',
-                    'status' => 'pending',
-                    'started_at' => now(),
-                    'backup_type' => $backupType,
-                    'compression_level' => $compressionLevel,
-                    'key_version' => $keyVersion,
-                ]);
+            }
+
+            $zip->close();
+
+            // 2️⃣ Encrypt ZIP
+            $encryptedFile = $zipFile . '.enc';
+            $this->encryptFile($zipFile, $encryptedFile, $keyVersion);
+            \File::delete($zipFile);
+
+            $encSize = \File::size($encryptedFile);
+            $encHash = hash_file('sha256', $encryptedFile);
+
+            // 3️⃣ Remote backup
                 try {
-                    $zip = new \ZipArchive();
-                    if ($zip->open($zipFile, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) === TRUE) {
-                        $newManifest = [];
-                        $files = new \RecursiveIteratorIterator(
-                            new \RecursiveDirectoryIterator($src, \RecursiveDirectoryIterator::SKIP_DOTS),
-                            \RecursiveIteratorIterator::SELF_FIRST
-                        );
-                        foreach ($files as $file) {
-                            $filePath = $file->getRealPath();
-                            $relativePath = substr($filePath, strlen($src) + 1);
-                            $include = false;
-                            if ($file->isDir()) {
-                                $zip->addEmptyDir($relativePath);
-                                continue;
-                            }
-                            $mtime = $file->getMTime();
-                            $newManifest[$relativePath] = $mtime;
-                            if ($backupType === 'full') {
-                                $include = true;
-                            } elseif ($backupType === 'incremental') {
-                                $include = !isset($lastManifest[$relativePath]) || $mtime > $lastManifest[$relativePath];
-                            } elseif ($backupType === 'differential') {
-                                $include = !isset($lastManifest[$relativePath]) || $mtime > ($lastManifest[$relativePath] ?? 0);
-                            }
-                            if ($include) {
-                                if ($compressionLevel === 'none') {
-                                    $zip->addFile($filePath, $relativePath);
-                                } else {
-                                    $zip->addFile($filePath, $relativePath);
-                                    $zip->setCompressionName($relativePath, $compressionMap[$compressionLevel], $compressionOptions[$compressionLevel]);
-                                }
-                            }
-                        }
-                        $zip->close();
-                        // Write new manifest to temp file, then encrypt and store in destination with timestamp
-                        $tmpManifestOut = $tmpDir . DIRECTORY_SEPARATOR . uniqid('manifest_out_', true) . '.json';
-                        File::put($tmpManifestOut, json_encode($newManifest));
-                        $manifestName = $dirName . '_manifest_' . $timestamp . '.json.enc';
-                        $manifestPath = $destination . DIRECTORY_SEPARATOR . $manifestName;
-                        $tmpManifestEnc = $tmpManifestOut . '.enc';
-                        $this->encryptFile($tmpManifestOut, $tmpManifestEnc, $keyVersion);
-                        File::move($tmpManifestEnc, $manifestPath);
-                        File::delete($tmpManifestOut);
-                        $size = File::size($zipFile);
-                        $hash = hash_file('sha256', $zipFile);
-                        // Encrypt the zip file in temp dir
-                        $encryptedFile = $tmpDir . DIRECTORY_SEPARATOR . basename($zipFile) . '.enc';
-                        $this->encryptFile($zipFile, $encryptedFile, $keyVersion);
-                        File::delete($zipFile); // Remove unencrypted file
-                        // Move encrypted file to destination
-                        $finalEncryptedFile = $destination . DIRECTORY_SEPARATOR . basename($encryptedFile);
-                        File::move($encryptedFile, $finalEncryptedFile);
-                        $encSize = File::size($finalEncryptedFile);
-                        $encHash = hash_file('sha256', $finalEncryptedFile);
-                        $history->update([
-                            'size' => $encSize,
-                            'status' => 'completed',
-                            'completed_at' => now(),
-                            'integrity_hash' => $encHash,
-                            'integrity_verified_at' => now(),
-                            'filename' => basename($finalEncryptedFile),
-                        ]);
+                    $linuxBackup = new \App\Services\LinuxBackupService();
+                    $remoteFile  = $linuxBackup->uploadFile($encryptedFile, config('backup.remote_path'));
 
-                        // Notify the user of successful backup
-                        auth()->user()->notify(new \App\Notifications\BackupCompleted($history));
+                    $historyRemote = BackupHistory::create([
+                        'user_id'               => auth()->id(),
+                        'source_directory'      => $src,
+                        'destination_directory' => config('backup.remote_path'),
+                        'destination_type'      => 'remote',
+                        'filename'              => basename($remoteFile),
+                        'size'                  => $encSize,
+                        'status'                => 'completed',
+                        'backup_type'           => $backupType,
+                        'compression_level'     => $compressionLevel,
+                        'key_version'           => $keyVersion,
+                        'started_at'            => now(),
+                        'completed_at'          => now(),
+                        'integrity_hash'        => $encHash,
+                        'integrity_verified_at' => now(),
+                    ]);
 
-                        Log::info('Backup completed (encrypted)', [
-                            'source' => $src,
-                            'destination' => $destination,
-                            'filename' => basename($finalEncryptedFile),
-                            'type' => $backupType,
-                            'compression' => $compressionLevel,
-                            'key_version' => $keyVersion,
-                        ]);
-                    } else {
-                        throw new \Exception('Failed to create zip file.');
-                    }
+                    // Notify user
+                    auth()->user()->notify(new \App\Notifications\BackupCompleted($historyRemote));
+
+                    \Log::info("✅ Remote backup completed", ['file' => $remoteFile]);
                 } catch (\Exception $e) {
-                    // Clean up temp files if they exist
-                    if (isset($zipFile) && file_exists($zipFile)) {
-                        File::delete($zipFile);
-                    }
-                    $encTemp = isset($encryptedFile) ? $encryptedFile : null;
-                    if ($encTemp && file_exists($encTemp)) {
-                        File::delete($encTemp);
-                    }
-                    if (isset($tmpManifestOut) && file_exists($tmpManifestOut)) {
-                        File::delete($tmpManifestOut);
-                    }
-                    if (isset($tmpManifestEnc) && file_exists($tmpManifestEnc)) {
-                        File::delete($tmpManifestEnc);
-                    }
-                    $history->update([
-                        'status' => 'failed',
-                        'completed_at' => now(),
-                        'error_message' => $e->getMessage(),
-                    ]);
-
-                    // Notify the user of failed backup
-                    auth()->user()->notify(new \App\Notifications\BackupFailed($history, $e->getMessage()));
-
-
-                    Log::error('Backup failed', [
-                        'source' => $src,
-                        'destination' => $destination,
-                        'filename' => isset($finalEncryptedFile) ? basename($finalEncryptedFile) : (isset($zipFile) ? basename($zipFile) : null),
-                        'type' => $backupType,
-                        'compression' => $compressionLevel,
-                        'error' => $e->getMessage(),
-                        'key_version' => $keyVersion,
-                    ]);
                     $allSuccess = false;
-                    $errorMsg = $e->getMessage();
+                    $errorMsg   = $e->getMessage();
+
+                    // Log and notify failure
+                    \Log::error("❌ Remote backup failed", ['error' => $e->getMessage()]);
+                    $historyFailed = BackupHistory::create([
+                        'user_id'               => auth()->id(),
+                        'source_directory'      => $src,
+                        'destination_directory' => config('backup.remote_path'),
+                        'destination_type'      => 'remote',
+                        'filename'              => basename($encryptedFile),
+                        'status'                => 'failed',
+                        'backup_type'           => $backupType,
+                        'compression_level'     => $compressionLevel,
+                        'key_version'           => $keyVersion,
+                        'started_at'            => now(),
+                        'completed_at'          => now(),
+                        'error_message'         => $e->getMessage(),
+                    ]);
+                    auth()->user()->notify(new \App\Notifications\BackupFailed($historyFailed, $e->getMessage()));
                 }
+            
+
+            // 4️⃣ Local backup
+                try {
+                    $localDestination = $request->input('destination_directory', storage_path('app/backups'));
+                    if (!\File::exists($localDestination)) {
+                        \File::makeDirectory($localDestination, 0755, true);
+                    }
+
+                    $finalLocalFile = $localDestination . DIRECTORY_SEPARATOR . basename($encryptedFile);
+                    \File::copy($encryptedFile, $finalLocalFile);
+
+                    $historyLocal = BackupHistory::create([
+                        'user_id'               => auth()->id(),
+                        'source_directory'      => $src,
+                        'destination_directory' => $localDestination,
+                        'destination_type'      => 'local',
+                        'filename'              => basename($finalLocalFile),
+                        'size'                  => $encSize,
+                        'status'                => 'completed',
+                        'backup_type'           => $backupType,
+                        'compression_level'     => $compressionLevel,
+                        'key_version'           => $keyVersion,
+                        'started_at'            => now(),
+                        'completed_at'          => now(),
+                        'integrity_hash'        => $encHash,
+                        'integrity_verified_at' => now(),
+                    ]);
+
+                    // Notify user
+                    auth()->user()->notify(new \App\Notifications\BackupCompleted($historyLocal));
+
+                    \Log::info("✅ Local backup completed", ['file' => $finalLocalFile]);
+                } catch (\Exception $e) {
+                    $allSuccess = false;
+                    $errorMsg   = $e->getMessage();
+
+                    \Log::error("❌ Local backup failed", ['error' => $e->getMessage()]);
+                    $historyFailed = BackupHistory::create([
+                        'user_id'               => auth()->id(),
+                        'source_directory'      => $src,
+                        'destination_directory' => $localDestination,
+                        'destination_type'      => 'local',
+                        'filename'              => basename($encryptedFile),
+                        'status'                => 'failed',
+                        'backup_type'           => $backupType,
+                        'compression_level'     => $compressionLevel,
+                        'key_version'           => $keyVersion,
+                        'started_at'            => now(),
+                        'completed_at'          => now(),
+                        'error_message'         => $e->getMessage(),
+                    ]);
+                    auth()->user()->notify(new \App\Notifications\BackupFailed($historyFailed, $e->getMessage()));
+                }
+            
+
+            // 5️⃣ Clean up temp encrypted file
+            if (in_array($storageLocation, ['both', 'remote'])) {
+                \File::delete($encryptedFile);
             }
-        }
-        if ($request->ajax() || $request->wantsJson()) {
-            if ($allSuccess) {
-                return response()->json(['success' => true]);
-            } else {
-                return response()->json(['success' => false, 'message' => $errorMsg ?: 'Backup failed.']);
-            }
-        }
-        if ($allSuccess) {
-            return redirect()->back()->with('status', 'Backup completed successfully!');
-        } else {
-            return redirect()->back()->withErrors(['backup' => 'Backup failed: ' . ($errorMsg ?: 'Unknown error')]);
+
+        } catch (\Exception $e) {
+            $allSuccess = false;
+            $errorMsg   = $e->getMessage();
+            \Log::error("❌ Backup failed", ['source' => $src, 'error' => $e->getMessage()]);
         }
     }
+
+    if ($request->ajax() || $request->wantsJson()) {
+        return $allSuccess
+            ? response()->json(['success' => true])
+            : response()->json(['success' => false, 'message' => $errorMsg ?: 'Backup failed.']);
+    }
+
+    return $allSuccess
+        ? redirect()->back()->with('status', 'Backup completed successfully!')
+        : redirect()->back()->withErrors(['backup' => 'Backup failed: ' . ($errorMsg ?: 'Unknown error')]);
+}
+
 
     // Key management helpers
     private function getEncryptionKeys()
