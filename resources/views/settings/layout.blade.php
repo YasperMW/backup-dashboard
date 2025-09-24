@@ -28,10 +28,6 @@
                 </div>
                 <nav class="flex-1 overflow-y-auto">
                     <div class="p-4 space-y-2">
-                        <a href="{{ route('settings.general') }}"
-                            class="block p-3 rounded-lg transition duration-200 {{ request()->routeIs('settings.general') ? 'bg-gray-900 text-white font-semibold' : 'hover:bg-gray-700 text-gray-300' }}">
-                            General Settings
-                        </a>
                         <a href="{{ route('settings.security') }}"
                             class="block p-3 rounded-lg transition duration-200 {{ request()->routeIs('settings.security') ? 'bg-gray-900 text-white font-semibold' : 'hover:bg-gray-700 text-gray-300' }}">
                             Security Settings

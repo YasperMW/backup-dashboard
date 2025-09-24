@@ -6,6 +6,7 @@ use App\Http\Controllers\DashboardController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\TwoFactorController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\StatusController;
 
 // Include test routes for debugging
 require __DIR__.'/test.php';
@@ -57,6 +58,18 @@ Route::middleware('auth')->group(function () {
         return view('recovery.recovery');
     })->name('recovery.index');
 
+    // Status routes
+    Route::get('/status/remote-host', [StatusController::class, 'remoteHost'])->name('status.remote-host');
+    Route::post('/status/toggle-offline', [StatusController::class, 'toggleOffline'])->name('status.toggle-offline');
+
+    // Encryption routes
+    Route::get('/encryption/config', [\App\Http\Controllers\EncryptionController::class, 'getConfig'])->name('encryption.config.get');
+    Route::post('/encryption/config', [\App\Http\Controllers\EncryptionController::class, 'updateConfig'])->name('encryption.config.update');
+    Route::post('/encryption/generate-key', [\App\Http\Controllers\EncryptionController::class, 'generateKey'])->name('encryption.generate-key');
+    Route::post('/encryption/activate-key', [\App\Http\Controllers\EncryptionController::class, 'activateKey'])->name('encryption.activate-key');
+    Route::get('/encryption/key-status', [\App\Http\Controllers\EncryptionController::class, 'getKeyStatus'])->name('encryption.key-status');
+    Route::post('/encryption/check-rotation', [\App\Http\Controllers\EncryptionController::class, 'checkRotation'])->name('encryption.check-rotation');
+
  // System Logs Routes
  Route::get('/logs', [\App\Http\Controllers\LogController::class, 'index'])->name('logs.index');
  Route::post('/logs/fetch', [\App\Http\Controllers\LogController::class, 'fetchLogs'])->name('logs.fetch');
@@ -66,9 +79,6 @@ Route::middleware('auth')->group(function () {
 
     // Settings Routes
     Route::prefix('settings')->name('settings.')->group(function () {
-        Route::get('/general', function () {
-            return view('settings.general');
-        })->name('general');
 
         Route::get('/security', function () {
             return view('settings.security');

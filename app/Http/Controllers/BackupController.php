@@ -188,10 +188,11 @@ class BackupController extends Controller
             $encSize = \File::size($encryptedFile);
             $encHash = hash_file('sha256', $encryptedFile);
 
-            // 3️⃣ Remote backup
+            // 3️⃣ Remote backup (optional per storage_location)
+            if (in_array($storageLocation, ['both', 'remote'], true)) {
                 try {
                     $linuxBackup = new \App\Services\LinuxBackupService();
-                    $remoteFile  = $linuxBackup->uploadFile($encryptedFile, config('backup.remote_path'));
+                    $remoteFile  = $linuxBackup->uploadFile($encryptedFile);
 
                     $historyRemote = BackupHistory::create([
                         'user_id'               => auth()->id(),
@@ -236,9 +237,11 @@ class BackupController extends Controller
                     ]);
                     auth()->user()->notify(new \App\Notifications\BackupFailed($historyFailed, $e->getMessage()));
                 }
+            }
             
 
-            // 4️⃣ Local backup
+            // 4️⃣ Local backup (optional per storage_location)
+            if (in_array($storageLocation, ['both', 'local'], true)) {
                 try {
                     $localDestination = $request->input('destination_directory', storage_path('app/backups'));
                     if (!\File::exists($localDestination)) {
@@ -290,10 +293,11 @@ class BackupController extends Controller
                     ]);
                     auth()->user()->notify(new \App\Notifications\BackupFailed($historyFailed, $e->getMessage()));
                 }
+            }
             
 
-            // 5️⃣ Clean up temp encrypted file
-            if (in_array($storageLocation, ['both', 'remote'])) {
+            // 5️⃣ Clean up temp encrypted file (always)
+            if (is_file($encryptedFile)) {
                 \File::delete($encryptedFile);
             }
 
@@ -469,7 +473,33 @@ class BackupController extends Controller
         if ($type) {
             $query->where('backup_type', $type);
         }
-        $backups = $query->orderByDesc('created_at')->get()->map(function($b) {
+        $linux = new \App\Services\LinuxBackupService();
+        $manualOffline = session('manual_offline', false);
+        $actuallyOffline = !$linux->isReachable(5);
+        $isSystemOffline = $manualOffline || $actuallyOffline;
+        $remotePath = config('backup.remote_path');
+        $backups = $query->orderByDesc('created_at')->get()->map(function($b) use ($linux, $remotePath, $isSystemOffline) {
+            $destDirNorm = rtrim(str_replace('\\', '/', $b->destination_directory ?? ''), '/');
+            $remotePathNorm = rtrim(str_replace('\\', '/', $remotePath ?? ''), '/');
+            $isRemote = ($b->destination_type === 'remote') || ($remotePathNorm && $destDirNorm === $remotePathNorm);
+            $localFullPath = $b->destination_directory . DIRECTORY_SEPARATOR . $b->filename;
+            $remoteFullPath = str_replace('\\', '/', $localFullPath);
+            // Determine exists based on offline/online and destination type
+            if ($isRemote) {
+                if ($isSystemOffline) {
+                    $exists = null; // unknown due to no connection
+                } else {
+                    // First try with full path
+                    $exists = $linux->exists($remoteFullPath);
+                    // If not found, try with just the filename in the default remote path
+                    if (!$exists) {
+                        $filenameOnly = basename($remoteFullPath);
+                        $exists = $linux->exists($linux->getRemotePath() . '/' . $filenameOnly);
+                    }
+                }
+            } else {
+                $exists = file_exists($localFullPath);
+            }
             return [
                 'id' => $b->id,
                 'created_at' => $b->created_at->toDateTimeString(),
@@ -477,6 +507,12 @@ class BackupController extends Controller
                 'filename' => $b->filename,
                 'size' => $b->size,
                 'status' => $b->status,
+                'destination_directory' => $b->destination_directory,
+                'destination_type' => $b->destination_type,
+                'exists' => $exists,
+                'connection' => $manualOffline ? 'offline' : 'online',
+                'is_remote' => $isRemote,
+                'is_offline' => $isSystemOffline && $isRemote,
             ];
         })->values();
         return response()->json(['success' => true, 'backups' => $backups]);
@@ -502,7 +538,43 @@ class BackupController extends Controller
             $keyVersion = $backup->key_version ?? 'v1';
 
             // Check if backup file exists
-            if (!file_exists($encPath)) {
+            $remotePath = config('backup.remote_path');
+            $remotePathNorm = rtrim(str_replace('\\', '/', $remotePath ?? ''), '/');
+            $destDirNorm = rtrim(str_replace('\\', '/', $backup->destination_directory ?? ''), '/');
+            $isRemote = ($backup->destination_type === 'remote') || ($remotePathNorm && $destDirNorm === $remotePathNorm);
+            $encLocalPath = $encPath;
+            if ($isRemote) {
+                $linux = new \App\Services\LinuxBackupService();
+                $remoteEncPath = str_replace('\\', '/', $encPath);
+                $remoteExists = $linux->exists($remoteEncPath);
+                $remoteDownloadPath = $remoteEncPath;
+                // Fallback to remote_path + '/' + filename in case dest dir mismatch
+                if (!$remoteExists && $remotePathNorm) {
+                    $altRemotePath = $remotePathNorm . '/' . $backup->filename;
+                    $remoteExists = $linux->exists($altRemotePath);
+                    if ($remoteExists) {
+                        $remoteDownloadPath = $altRemotePath;
+                    }
+                }
+                if (!$remoteExists) {
+                    Log::error('Restore failed: remote backup file not found', [
+                        'backup_id' => $backup->id,
+                        'attempted_paths' => [$remoteEncPath, ($remotePathNorm ? ($remotePathNorm . '/' . $backup->filename) : null)],
+                        'restorePath' => $restorePath,
+                        'key_version' => $keyVersion,
+                    ]);
+
+                    auth()->user()->notify(new \App\Notifications\RestoreFailed($backup, 'Remote backup file not found.'));
+                    return response()->json(['success' => false, 'message' => 'Remote backup file not found.']);
+                }
+                $tmpEnc = tempnam(sys_get_temp_dir(), 'remote_enc_') . '.enc';
+                if (!$linux->downloadFile($remoteDownloadPath, $tmpEnc)) {
+                    return response()->json(['success' => false, 'message' => 'Failed to download remote backup file.']);
+                }
+                $encLocalPath = $tmpEnc;
+            }
+
+            if (!$isRemote && !file_exists($encPath)) {
                 Log::error('Restore failed: backup file not found', [
                     'backup_id' => $backup->id,
                     'zipPath' => $encPath,
@@ -517,11 +589,11 @@ class BackupController extends Controller
             // Decrypt to a temp file
             $tmpZip = tempnam(sys_get_temp_dir(), 'restore_') . '.zip';
             try {
-                $this->decryptFile($encPath, $tmpZip, $keyVersion);
+                $this->decryptFile($encLocalPath, $tmpZip, $keyVersion);
             } catch (\Exception $e) {
                 Log::error('Restore decryption failed', [
                     'backup_id' => $backup->id,
-                    'zipPath' => $encPath,
+                    'zipPath' => $encLocalPath,
                     'restorePath' => $restorePath,
                     'key_version' => $keyVersion,
                     'error' => $e->getMessage(),
@@ -568,6 +640,9 @@ class BackupController extends Controller
 
                 $zip->close();
                 unlink($tmpZip);
+                if (isset($tmpEnc) && file_exists($tmpEnc)) {
+                    @unlink($tmpEnc);
+                }
 
                 Log::info('Backup restored', [
                     'backup_id' => $backup->id,
@@ -606,12 +681,37 @@ class BackupController extends Controller
             $backup = BackupHistory::findOrFail($request->backup_id);
             $encPath = $backup->destination_directory . DIRECTORY_SEPARATOR . $backup->filename;
 
-            if (!file_exists($encPath)) {
+            $remotePath = config('backup.remote_path');
+            $remotePathNorm = rtrim(str_replace('\\', '/', $remotePath ?? ''), '/');
+            $destDirNorm = rtrim(str_replace('\\', '/', $backup->destination_directory ?? ''), '/');
+            $isRemote = ($backup->destination_type === 'remote') || ($remotePathNorm && $destDirNorm === $remotePathNorm);
+            $encLocalPath = $encPath;
+            if ($isRemote) {
+                $linux = new \App\Services\LinuxBackupService();
+                $remoteEncPath = str_replace('\\', '/', $encPath);
+                $remoteExists = $linux->exists($remoteEncPath);
+                $remoteDownloadPath = $remoteEncPath;
+                if (!$remoteExists && $remotePathNorm) {
+                    $altRemotePath = $remotePathNorm . '/' . $backup->filename;
+                    $remoteExists = $linux->exists($altRemotePath);
+                    if ($remoteExists) {
+                        $remoteDownloadPath = $altRemotePath;
+                    }
+                }
+                if (!$remoteExists) {
+                    return response()->json(['success' => false, 'message' => 'Remote backup file not found.']);
+                }
+                $tmpEnc = tempnam(sys_get_temp_dir(), 'remote_enc_') . '.enc';
+                if (!$linux->downloadFile($remoteDownloadPath, $tmpEnc)) {
+                    return response()->json(['success' => false, 'message' => 'Failed to download remote backup file.']);
+                }
+                $encLocalPath = $tmpEnc;
+            } else if (!file_exists($encPath)) {
                 return response()->json(['success' => false, 'message' => 'Backup file not found.']);
             }
 
             // Calculate hash and check integrity
-            $hash = hash_file('sha256', $encPath);
+            $hash = hash_file('sha256', $encLocalPath);
             $match = $backup->integrity_hash === $hash;
 
             if ($match) {
@@ -622,14 +722,18 @@ class BackupController extends Controller
                 auth()->user()->notify(new \App\Notifications\IntegrityCheckFailed($backup));
             }
 
-            return response()->json([
+            $resp = [
                 'success' => $match,
                 'message' => $match
                     ? 'Backup is authentic and has not been tampered with.'
                     : 'WARNING: Backup file has been changed or corrupted since creation! Integrity check failed.',
                 'expected_hash' => $backup->integrity_hash,
                 'actual_hash' => $hash,
-            ]);
+            ];
+            if (isset($tmpEnc) && file_exists($tmpEnc)) {
+                @unlink($tmpEnc);
+            }
+            return response()->json($resp);
         }
 
 } 

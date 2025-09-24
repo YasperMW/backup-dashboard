@@ -2,6 +2,10 @@
     .hidden-row {
         display: none;
     }
+    .no-connection {
+        opacity: 0.7;
+        pointer-events: none;
+    }
 </style>
 @extends('layouts.dashboard')
 @section('content')
@@ -43,6 +47,7 @@
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Filename</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                             </tr>
                         </thead>
@@ -50,22 +55,64 @@
                             @php
                                 $backups = \App\Models\BackupHistory::orderByDesc('created_at')->get();
                                 $showLimit = 5;
+                                $linux = new \App\Services\LinuxBackupService();
+                                $manualOffline = session('manual_offline', false);
+                                $actuallyOffline = $manualOffline ? false : !$linux->isReachable(5); // Skip connectivity check if manually offline
+                                $isSystemOffline = $manualOffline || $actuallyOffline; // Either manual or actual offline
+                                $remotePath = config('backup.remote_path');
+                                $remotePathNorm = $remotePath ? rtrim(str_replace('\\', '/', $remotePath), '/') : '';
                             @endphp
                             @foreach($backups as $i => $history)
                             @php
                                 $filePath = $history->destination_directory . DIRECTORY_SEPARATOR . $history->filename;
-                                $fileExists = file_exists($filePath);
+                                $destDirNorm = rtrim(str_replace('\\', '/', $history->destination_directory ?? ''), '/');
+                                $isRemote = ($history->destination_type === 'remote') || ($remotePathNorm && $destDirNorm === $remotePathNorm);
+                                $isOffline = $isSystemOffline && $isRemote;
+                                
+                                $fileExists = false;
+                                if ($isOffline) {
+                                    $fileExists = null; // unknown; no connection
+                                } else if ($isRemote) {
+                                    $remoteFilePath = str_replace('\\', '/', $filePath);
+                                    $fileExists = $linux->exists($remoteFilePath);
+                                    if (!$fileExists && $remotePathNorm) {
+                                        $fallbackRemote = $remotePathNorm . '/' . $history->filename;
+                                        $fileExists = $linux->exists($fallbackRemote);
+                                    }
+                                } else {
+                                    $fileExists = file_exists($filePath);
+                                }
                             @endphp
-                            <tr class="{{ $i >= $showLimit ? 'hidden-row' : '' }}">
+                            <tr class="{{ $i >= $showLimit ? 'hidden-row' : '' }} {{ $isOffline ? 'no-connection' : '' }}" @if($isOffline) title="No connection to remote server" @endif>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    <input type="radio" name="backup_id" value="{{ $history->id }}" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" @if(!$fileExists) disabled @endif>
+                                    <input type="radio" name="backup_id" value="{{ $history->id }}" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" @if(!$fileExists || $isOffline) disabled @endif>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $history->created_at }}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $history->backup_type ?? 'Full' }}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $history->filename }}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $history->size ? number_format($history->size / 1048576, 2) . ' MB' : '-' }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    @php
+                                        $destType = $history->destination_type ?? null;
+                                        if (!$destType) {
+                                            $remotePath = config('backup.remote_path');
+                                            $destDirNorm = rtrim(str_replace('\\', '/', $history->destination_directory ?? ''), '/');
+                                            $remotePathNorm = rtrim(str_replace('\\', '/', $remotePath ?? ''), '/');
+                                            $destType = ($remotePathNorm && $destDirNorm === $remotePathNorm) ? 'remote' : 'local';
+                                        }
+                                    @endphp
+                                    <span class="inline-flex items-center gap-2">
+                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full {{ ($destType === 'remote') ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800' }}">{{ ucfirst($destType) }}</span>
+                                        <span class="text-gray-500">{{ $history->destination_directory }}</span>
+                                        @if($destType === 'remote')
+                                            <span class="px-2 inline-flex text-[10px] leading-5 font-medium rounded-full bg-blue-50 text-blue-700 border border-blue-200" title="Remote file checked via SFTP at {{ config('backup.linux_host') }}">SFTP</span>
+                                        @endif
+                                    </span>
+                                </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    @if(!$fileExists)
+                                    @if($isRemote && $fileExists === null)
+                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">No connection</span>
+                                    @elseif(!$fileExists)
                                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">Missing</span>
                                     @elseif($history->status === 'completed')
                                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Available</span>
@@ -81,7 +128,7 @@
                         @if($backups->count() > $showLimit)
                         <tfoot>
                         <tr>
-                            <td colspan="6" class="text-center py-2">
+                            <td colspan="7" class="text-center py-2">
                                 <button id="view-more-backups" class="text-blue-600 hover:underline">View More</button>
                             </td>
                         </tr>
@@ -168,24 +215,51 @@
         }
         
         const showLimit = 5;
+        const manualOffline = {{ session('manual_offline', false) ? 'true' : 'false' }};
+        const actuallyOffline = {{ $actuallyOffline ? 'true' : 'false' }};
+        const isSystemOffline = manualOffline || actuallyOffline;
+        const remotePath = '{{ config('backup.remote_path') }}';
+        const remotePathNorm = remotePath ? remotePath.replace(/\\/g, '/').replace(/\/+$/, '') : '';
 
         function renderBackupList(backups) {
             const tbody = document.getElementById('backup-list-tbody');
             tbody.innerHTML = '';
             let hasMore = backups.length > showLimit;
             backups.forEach((b, i) => {
+                const destDirNorm = b.destination_directory ? b.destination_directory.replace(/\\/g, '/').replace(/\/+$/, '') : '';
+                const isRemote = b.is_remote !== undefined ? b.is_remote : (b.destination_type === 'remote' || (remotePathNorm && destDirNorm === remotePathNorm));
+                const isOffline = isSystemOffline && isRemote;
+                
                 const tr = document.createElement('tr');
                 tr.className = i >= showLimit ? 'hidden-row' : '';
+                if (isOffline) {
+                    tr.classList.add('no-connection');
+                    tr.title = 'No connection to remote server';
+                }
+                
                 tr.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap">
-                        <input type="radio" name="backup_id" value="${b.id}" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" ${b.status !== 'completed' ? 'disabled' : ''}>
+                        <input type="radio" name="backup_id" value="${b.id}" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" ${(!b.exists || b.status !== 'completed' || isOffline) ? 'disabled' : ''}>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${b.created_at}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${b.backup_type || 'Full'}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${b.filename || ''}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${b.size ? (b.size/1048576).toFixed(2) + ' MB' : '-'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isRemote ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}">${isRemote ? 'Remote' : 'Local'}</span>
+                        <span class="text-gray-500 ml-2">${b.destination_directory || ''}</span>
+                        ${isRemote ? '<span class="ml-2 px-2 inline-flex text-[10px] leading-5 font-medium rounded-full bg-blue-50 text-blue-700 border border-blue-200" title="Remote file checked via SFTP">SFTP</span>' : ''}
+                    </td>
                     <td class="px-6 py-4 whitespace-nowrap">
-                        ${b.status === 'completed' ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Available</span>' : b.status === 'failed' ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Failed</span>' : '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Pending</span>'}
+                        ${(isOffline && isRemote) || (isRemote && b.exists === null)
+                            ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">No connection</span>'
+                            : b.exists === false
+                                ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Missing</span>'
+                                : b.status === 'completed' && b.exists === true
+                                    ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Available</span>'
+                                    : b.status === 'failed'
+                                        ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Failed</span>'
+                                        : '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Pending</span>'}
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -199,7 +273,7 @@
                 tfoot = document.createElement('tfoot');
                 tfoot.innerHTML = `
                     <tr>
-                        <td colspan="6" class="text-center py-2">
+                        <td colspan="7" class="text-center py-2">
                             <button id="view-more-backups" class="text-blue-600 hover:underline">View More</button>
                         </td>
                     </tr>

@@ -10,8 +10,9 @@ return new class extends Migration
      * Run the migrations.
      */
     public function up(): void
-    {
-        Schema::create('notifications', function (Blueprint $table) {
+    {  
+        if (!Schema::hasTable('notifications')) {
+            Schema::create('notifications', function (Blueprint $table) {
             $table->char('id', 36)->primary();
             $table->string('type', 191);
             $table->string('notifiable_type', 191);
@@ -22,7 +23,7 @@ return new class extends Migration
 
             $table->index('notifiable_type'); // from your schema (MUL)
         });
-    }
+    }}
 
     /**
      * Reverse the migrations.

@@ -36,6 +36,11 @@ class RunScheduledBackups extends Command
         $currentTime = $now->format('H:i');
         $currentDay = $now->format('D'); // Mon, Tue, etc.
         $schedules = BackupSchedule::where('enabled', true)->get();
+        // Read global backup configuration for scheduled jobs
+        $config = \App\Models\BackupConfiguration::first();
+        $storageLocation = $config->storage_location ?? 'both'; // 'local','remote','both'
+        $backupType = $config->backup_type ?? 'full';
+        $compressionLevel = $config->compression_level ?? 'none';
         $globalRetentionDays = env('BACKUP_RETENTION_DAYS', 30);
         $globalMaxBackups = env('BACKUP_MAX_BACKUPS', 20);
         $this->info('Checking schedules...');
@@ -94,14 +99,7 @@ class RunScheduledBackups extends Command
                     $finalEncryptedFile = $destination . DIRECTORY_SEPARATOR . basename($zipFile) . '.enc';
                     $backupController = new BackupController();
                     $keyVersion = $backupController->getCurrentKeyVersion();
-                    $history = BackupHistory::create([
-                        'source_directory' => $src,
-                        'destination_directory' => $destination,
-                        'filename' => basename($finalEncryptedFile),
-                        'status' => 'pending',
-                        'started_at' => $now,
-                        'key_version' => $keyVersion,
-                    ]);
+                    $history = null; // local history (only when local is selected)
                     try {
                         $zip = new \ZipArchive();
                         if ($zip->open($zipFile, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) === TRUE) {
@@ -123,19 +121,87 @@ class RunScheduledBackups extends Command
                             $encryptedFile = $zipFile . '.enc';
                             $backupController->encryptFile($zipFile, $encryptedFile, $keyVersion);
                             File::delete($zipFile); // Remove unencrypted file
-                            // Move encrypted file to destination
-                            File::move($encryptedFile, $finalEncryptedFile);
-                            $encSize = File::size($finalEncryptedFile);
-                            $encHash = hash_file('sha256', $finalEncryptedFile);
-                            $history->update([
-                                'size' => $encSize,
-                                'status' => 'completed',
-                                'completed_at' => $now,
-                                'integrity_hash' => $encHash,
-                                'integrity_verified_at' => $now,
-                                'filename' => basename($finalEncryptedFile),
-                            ]);
-                            $this->info('Backup created and encrypted: ' . $finalEncryptedFile);
+                            
+                            $encSize = 0;
+                            $encHash = null;
+
+                            $doLocal = in_array($storageLocation, ['local','both'], true);
+                            $doRemote = in_array($storageLocation, ['remote','both'], true);
+
+                            $pathForRemoteUpload = $encryptedFile; // default if not moving locally
+
+                            if ($doLocal) {
+                                // Ensure destination exists and move
+                                if (!File::exists($destination)) {
+                                    File::makeDirectory($destination, 0755, true);
+                                }
+                                File::move($encryptedFile, $finalEncryptedFile);
+                                $pathForRemoteUpload = $finalEncryptedFile;
+                                $encSize = File::size($finalEncryptedFile);
+                                $encHash = hash_file('sha256', $finalEncryptedFile);
+                                // Create/update local history
+                                $history = BackupHistory::create([
+                                    'source_directory' => $src,
+                                    'destination_directory' => $destination,
+                                    'destination_type' => 'local',
+                                    'filename' => basename($finalEncryptedFile),
+                                    'status' => 'pending',
+                                    'started_at' => $now,
+                                    'key_version' => $keyVersion,
+                                    'backup_type' => $backupType,
+                                    'compression_level' => $compressionLevel,
+                                ]);
+                                $history->update([
+                                    'size' => $encSize,
+                                    'status' => 'completed',
+                                    'completed_at' => $now,
+                                    'integrity_hash' => $encHash,
+                                    'integrity_verified_at' => $now,
+                                ]);
+                                $this->info('Backup created and encrypted (local): ' . $finalEncryptedFile);
+                            } else {
+                                // Not storing locally. Use temp encrypted file for remote, compute size/hash.
+                                $encSize = File::exists($encryptedFile) ? File::size($encryptedFile) : 0;
+                                $encHash = File::exists($encryptedFile) ? hash_file('sha256', $encryptedFile) : null;
+                            }
+                            // Also upload to remote via SFTP and create a remote history record (if configured)
+                            if ($doRemote) {
+                                try {
+                                    $linux = new \App\Services\LinuxBackupService();
+                                    $remoteFile = $linux->uploadFile($pathForRemoteUpload);
+                                    BackupHistory::create([
+                                        'source_directory' => $src,
+                                        'destination_directory' => config('backup.remote_path'),
+                                        'destination_type' => 'remote',
+                                        'filename' => basename($remoteFile),
+                                        'size' => $encSize,
+                                        'status' => 'completed',
+                                        'started_at' => $now,
+                                        'completed_at' => $now,
+                                        'key_version' => $keyVersion,
+                                        'integrity_hash' => $encHash,
+                                        'integrity_verified_at' => $now,
+                                        'backup_type' => $backupType,
+                                        'compression_level' => $compressionLevel,
+                                    ]);
+                                    $this->info('Remote backup uploaded: ' . $remoteFile);
+                                } catch (\Throwable $er) {
+                                    $this->error('Remote upload failed: ' . $er->getMessage());
+                                    BackupHistory::create([
+                                        'source_directory' => $src,
+                                        'destination_directory' => config('backup.remote_path'),
+                                        'destination_type' => 'remote',
+                                        'filename' => basename($pathForRemoteUpload),
+                                        'status' => 'failed',
+                                        'started_at' => $now,
+                                        'completed_at' => $now,
+                                        'key_version' => $keyVersion,
+                                        'error_message' => $er->getMessage(),
+                                        'backup_type' => $backupType,
+                                        'compression_level' => $compressionLevel,
+                                    ]);
+                                }
+                            }
                             // Broadcast success event
                             event(new ScheduledBackupStatus(
                                 'completed',
@@ -144,7 +210,7 @@ class RunScheduledBackups extends Command
                         } else {
                             throw new \Exception('Failed to create zip file.');
                         }
-                    } catch (\Exception $e) {
+                    } catch (\Throwable $e) {
                         if (isset($zipFile) && file_exists($zipFile)) {
                             File::delete($zipFile);
                         }
@@ -152,11 +218,14 @@ class RunScheduledBackups extends Command
                         if ($encTemp && file_exists($encTemp)) {
                             File::delete($encTemp);
                         }
-                        $history->update([
-                            'status' => 'failed',
-                            'completed_at' => $now,
-                            'error_message' => $e->getMessage(),
-                        ]);
+                        // Do not downgrade if already completed successfully
+                        if ($history->status !== 'completed') {
+                            $history->update([
+                                'status' => 'failed',
+                                'completed_at' => $now,
+                                'error_message' => $e->getMessage(),
+                            ]);
+                        }
                         // Broadcast failure event
                         event(new ScheduledBackupStatus(
                             'failed',

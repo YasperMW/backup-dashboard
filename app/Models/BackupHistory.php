@@ -9,6 +9,7 @@ class BackupHistory extends Model
     protected $fillable = [
         'source_directory',
         'destination_directory',
+        'destination_type',
         'filename',
         'size',
         'status',

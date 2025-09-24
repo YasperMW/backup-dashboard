@@ -13,6 +13,12 @@
         }
     </style>
     @section('content')
+    @php
+        $manualOffline = session('manual_offline', false);
+        $linux = new \App\Services\LinuxBackupService();
+        $actuallyOffline = $manualOffline ? false : !$linux->isReachable(5);
+        $isSystemOffline = $manualOffline || $actuallyOffline;
+    @endphp
     <div class="p-6">
         @if ($errors->has('backup'))
             <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -59,6 +65,22 @@
         <!-- Backup Schedule Section -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-6">
             <h2 class="text-xl font-semibold text-gray-800 mb-4">Backup Schedule</h2>
+            @if($isSystemOffline)
+                <div class="bg-orange-50 border border-orange-200 text-orange-800 px-4 py-3 rounded mb-4">
+                    <div class="flex">
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-orange-400" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <p class="text-sm">
+                                <strong>System is offline:</strong> Scheduled backups will only work for local destinations. Remote backups will be skipped until the system is back online.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            @endif
             <!-- Create Backup Schedule Form -->
             <form method="POST" action="{{ route('backup.schedule.create') }}" class="mb-6" id="schedule-create-form">
                 @csrf
@@ -138,7 +160,7 @@
 
 
         <!-- Manual Backup Section -->
-        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div id="manual-backup" class="bg-white rounded-lg shadow-md p-6 mb-6">
             <h2 class="text-xl font-semibold text-gray-800 mb-4">Manual Backup</h2>
             <!-- Source Directories Section -->
             <h3 class="text-lg font-semibold text-gray-700 mb-2">Source Directories</h3>
@@ -189,11 +211,23 @@
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Storage Location</label>
                     <select id="manual_storage_location" name="storage_location" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                        <option value="local" {{ ($backupConfig->storage_location ?? 'local') === 'local' ? 'selected' : '' }}>Local Storage</option>
-                        <option value="s3" {{ ($backupConfig->storage_location ?? '') === 's3' ? 'selected' : '' }}>Amazon S3</option>
-                        <option value="gcs" {{ ($backupConfig->storage_location ?? '') === 'gcs' ? 'selected' : '' }}>Google Cloud Storage</option>
-                        <option value="azure" {{ ($backupConfig->storage_location ?? '') === 'azure' ? 'selected' : '' }}>Azure Blob Storage</option>
+                        <option value="local" {{ $isSystemOffline ? 'selected' : '' }}>Local only</option>
+                        @if(!$isSystemOffline)
+                            <option value="remote">Remote server only</option>
+                            <option value="both" selected>Both (Local + Remote)</option>
+                            <option disabled>──────────</option>
+                            <option value="s3" disabled title="Not implemented yet">Amazon S3 (coming soon)</option>
+                            <option value="gcs" disabled title="Not implemented yet">Google Cloud Storage (coming soon)</option>
+                            <option value="azure" disabled title="Not implemented yet">Azure Blob Storage (coming soon)</option>
+                            <option value="b2" disabled title="Not implemented yet">Backblaze B2 (coming soon)</option>
+                            <option value="dropbox" disabled title="Not implemented yet">Dropbox (coming soon)</option>
+                        @endif
                     </select>
+                    @if($isSystemOffline)
+                        <p class="mt-1 text-xs text-orange-600">⚠️ System is offline - only local storage is available.</p>
+                    @else
+                        <p class="mt-1 text-xs text-gray-500">Cloud providers are shown for visibility and will be enabled in a future update.</p>
+                    @endif
                 </div>
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Backup Type</label>
@@ -229,14 +263,22 @@
                         @endforeach
                     </select>
                 </div>
-                <div class="mb-4 hidden" id="manual-cloud-group">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Cloud Storage Destination</label>
-                    <input type="text" id="manual-cloud-destination" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-100" value="" readonly>
-                </div>
+                <div class="mb-4 hidden" id="manual-cloud-group"></div>
                 <button type="submit" id="start-backup-btn" class="bg-green-500 text-white px-6 py-2 rounded-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
                     Start Backup Now
                 </button>
-                <span class="text-sm text-gray-500">Last backup: 2 hours ago</span>
+                @php
+                    $last = \App\Models\BackupHistory::where('status','completed')->orderByDesc('completed_at')->first();
+                    $lastAt = null;
+                    if ($last) {
+                        if (!empty($last->completed_at)) {
+                            $lastAt = \Carbon\Carbon::parse($last->completed_at);
+                        } elseif (!empty($last->created_at)) {
+                            $lastAt = \Carbon\Carbon::parse($last->created_at);
+                        }
+                    }
+                @endphp
+                <span class="text-sm text-gray-500">Last backup: <span id="last-backup-relative">{{ $lastAt ? $lastAt->diffForHumans() : 'never' }}</span></span>
                 <div id="backup-progress" class="mt-4 hidden flex items-center">
                     <svg class="animate-spin h-5 w-5 text-blue-500 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -248,7 +290,7 @@
         </div>
 
         <!-- Backup History Table -->
-        <div class="bg-white rounded-lg shadow-md p-6">
+        <div id="backup-history" class="bg-white rounded-lg shadow-md p-6">
             <h2 class="text-xl font-semibold text-gray-800 mb-4">Backup History</h2>
             <div id="backup-history-table-container">
                 @include('backup.history-table')
@@ -268,25 +310,28 @@
  @endsection
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const isSystemOffline = {{ $isSystemOffline ? 'true' : 'false' }};
+    
     function updateManualBackupDestination() {
         const storage = document.getElementById('manual_storage_location').value;
         const destGroup = document.getElementById('manual-destination-group');
         const cloudGroup = document.getElementById('manual-cloud-group');
-        const cloudInput = document.getElementById('manual-cloud-destination');
         const addDestGroup = document.getElementById('add-destination-group');
-        if (storage === 'local') {
+        
+        // If system is offline, force local storage only
+        if (isSystemOffline && (storage === 'remote' || storage === 'both')) {
+            document.getElementById('manual_storage_location').value = 'local';
+            return updateManualBackupDestination(); // Recursive call with corrected value
+        }
+        
+        if (storage === 'local' || storage === 'both') {
             destGroup.classList.remove('hidden');
-            cloudGroup.classList.add('hidden');
             addDestGroup.classList.remove('hidden');
-        } else {
+            cloudGroup.classList.add('hidden');
+        } else if (storage === 'remote') {
             destGroup.classList.add('hidden');
-            cloudGroup.classList.remove('hidden');
             addDestGroup.classList.add('hidden');
-            let label = '';
-            if (storage === 's3') label = 'Amazon S3';
-            else if (storage === 'gcs') label = 'Google Cloud Storage';
-            else if (storage === 'azure') label = 'Azure Blob Storage';
-            cloudInput.value = label;
+            cloudGroup.classList.add('hidden');
         }
     }
     document.getElementById('manual_storage_location').addEventListener('change', updateManualBackupDestination);
@@ -321,6 +366,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (data.success) {
                     showToast('Backup completed successfully!', 'success');
                     refreshBackupHistoryTable();
+                    const lastSpan = document.getElementById('last-backup-relative');
+                    if (lastSpan) lastSpan.textContent = 'just now';
                 } else {
                     showToast(data.message || 'Backup failed.', 'error');
                 }

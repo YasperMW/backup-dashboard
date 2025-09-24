@@ -2,6 +2,10 @@
     .hidden-row {
         display: none;
     }
+    .no-connection {
+        opacity: 0.7;
+        pointer-events: none;
+    }
 </style>
 <div class="overflow-x-auto">
     <table class="min-w-full divide-y divide-gray-200">
@@ -21,21 +25,54 @@
         @php
             $backups = \App\Models\BackupHistory::orderByDesc('created_at')->get();
             $showLimit = 5;
+            $manualOffline = session('manual_offline', false);
+            $linux = new \App\Services\LinuxBackupService();
+            $actuallyOffline = $manualOffline ? false : !$linux->isReachable(5); // Skip connectivity check if manually offline
+            $isSystemOffline = $manualOffline || $actuallyOffline;
+            $remotePath = config('backup.remote_path');
+            $remotePathNorm = $remotePath ? rtrim(str_replace('\\', '/', $remotePath), '/') : '';
         @endphp
         <tbody class="bg-white divide-y divide-gray-200" id="backup-history-tbody">
             @foreach($backups as $i => $history)
-                <tr class="backup-row{{ $i >= $showLimit ? ' hidden-row' : '' }}">
+                @php
+    $destDirNorm = rtrim(str_replace('\\', '/', $history->destination_directory ?? ''), '/');
+    $isRemote = ($history->destination_type === 'remote') || ($remotePathNorm && $destDirNorm === $remotePathNorm);
+    $isOffline = $isSystemOffline && $isRemote;
+@endphp
+<tr class="backup-row{{ $i >= $showLimit ? ' hidden-row' : '' }} {{ $isOffline ? 'no-connection' : '' }}" @if($isOffline) title="No connection to remote server" @endif>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $history->created_at }}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $history->source_directory }}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $history->destination_directory }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        @php
+                            $destType = $isRemote ? 'remote' : 'local';
+                        @endphp
+                        <span class="inline-flex items-center gap-2">
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full {{ ($destType === 'remote') ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800' }}">{{ ucfirst($destType) }}</span>
+                            <span class="text-gray-600">{{ $history->destination_directory }}</span>
+                        </span>
+                    </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $history->filename }}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $history->size ? number_format($history->size / 1048576, 2) . ' MB' : '-' }}</td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         @php
                             $filePath = $history->destination_directory . DIRECTORY_SEPARATOR . $history->filename;
-                            $fileExists = file_exists($filePath);
+                            
+                            if ($isOffline) {
+                                $fileExists = null; // unknown; no connection
+                            } else if ($isRemote) {
+                                $remoteFilePath = str_replace('\\', '/', $filePath);
+                                $fileExists = $linux->exists($remoteFilePath);
+                                if (!$fileExists && $remotePathNorm) {
+                                    $fallback = $remotePathNorm . '/' . $history->filename;
+                                    $fileExists = $linux->exists($fallback);
+                                }
+                            } else {
+                                $fileExists = file_exists($filePath);
+                            }
                         @endphp
-                        @if(!$fileExists)
+                        @if($isRemote && $fileExists === null)
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">No connection</span>
+                        @elseif(!$fileExists)
                             <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">Missing</span>
                         @elseif($history->status === 'completed')
                             <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Completed</span>

@@ -1,16 +1,17 @@
 <?php
 
-return [
-    'encryption_keys' => [
-        'v1' => env('BACKUP_KEY_V1'),
-        'v2' => env('BACKUP_KEY_V2'),
-        // Add more versions as needed
-    ],
-    'current_key_version' => env('BACKUP_KEY_CURRENT', 'v1'),
-
-    // Linux SFTP / Immutable backup settings
-    'linux_host' => env('BACKUP_LINUX_HOST', '192.168.56.106'),
-    'linux_user' => env('BACKUP_LINUX_USER', 'laravel_user'),
-    'linux_pass' => env('BACKUP_LINUX_PASS', 'your_password'),
-    'remote_path' => env('BACKUP_LINUX_PATH', '/srv/backups/laravel'),
-];
+return array (
+  'encryption_type' => 'aes-256-cbc',
+  'key_rotation_frequency' => '30_days',
+  'last_key_rotation' => '2025-09-24T00:27:58.380348Z',
+  'encryption_keys' => 
+  array (
+    'v1' => 'base64:1TZDi9JtztwB6bNQd+6X3iUwvgDeFLshbmK8MVhT/qQ=',
+    'v2' => 'base64:ymfBiwrL25Ovp+k2io0iClBY6ihAZXlbQ7kp6C8vLJo=',
+  ),
+  'current_key_version' => 'v2',
+  'linux_host' => '100.81.196.91',
+  'linux_user' => 'laravel_user',
+  'linux_pass' => 'YasperYT',
+  'remote_path' => '/srv/backups/laravel',
+);
