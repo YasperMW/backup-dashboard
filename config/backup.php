@@ -14,4 +14,5 @@ return array (
   'linux_user' => 'laravel_user',
   'linux_pass' => 'YasperYT',
   'remote_path' => '/srv/backups/laravel',
+  'docker_container' => env('DOCKER_CONTAINER_NAME', 'safeguardx'),
 );

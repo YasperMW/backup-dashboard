@@ -154,6 +154,7 @@
                         </button>
                         <input id="restore-path-picker" type="file" style="display:none" webkitdirectory directory />
                     </div>
+                    <p class="mt-1 text-sm text-gray-500">For Docker: Use container paths like /tmp/restore_out. See Docker section below for host file copying.</p>
                 </div>
                 <!-- Restore Options -->
                 <div>
@@ -184,6 +185,85 @@
                 Start Restore
             </button>
         </div>
+
+        <!-- Docker Deployment Restore Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mt-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Docker Container Restore</h2>
+            <p class="text-sm text-gray-600 mb-4">If you're running this app in Docker and want to restore files to your host machine, use the commands below after restoration.</p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                <!-- Container Name/ID -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Container Name/ID</label>
+                    <input id="container-name" type="text" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="backup-dashboard" value="backup-dashboard">
+                    <p class="mt-1 text-sm text-gray-500">Name or ID of your Docker container</p>
+                </div>
+                <!-- Host Destination -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Host Destination</label>
+                    <input id="host-destination" type="text" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="/home/user/restored-backup" value="/home/user/restored-backup">
+                    <p class="mt-1 text-sm text-gray-500">Where to copy files on your host machine</p>
+                </div>
+            </div>
+
+            <!-- Generated Commands -->
+            <div class="bg-gray-50 rounded-lg p-4 mb-4">
+                <h3 class="text-lg font-medium text-gray-800 mb-3">Generated Commands</h3>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">1. Create host directory:</label>
+                        <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-sm overflow-x-auto">
+                            <code id="mkdir-command">mkdir -p /home/user/restored-backup</code>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">2. Copy files from container to host:</label>
+                        <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-sm overflow-x-auto">
+                            <code id="docker-cp-command">docker cp backup-dashboard:/tmp/restore_out /home/user/restored-backup</code>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">3. Alternative (if multiple files):</label>
+                        <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-sm overflow-x-auto">
+                            <code id="docker-cp-multiple">docker cp backup-dashboard:/tmp/restore_out/. /home/user/restored-backup/</code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Copy to Clipboard Buttons -->
+            <div class="flex flex-wrap gap-2 mb-4">
+                <button id="copy-mkdir-btn" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    Copy Directory Command
+                </button>
+                <button id="copy-docker-cp-btn" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    Copy Docker Command
+                </button>
+                <button id="copy-script-btn" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    Copy Full Script
+                </button>
+            </div>
+
+            <!-- Generated Script -->
+            <div class="bg-gray-50 rounded-lg p-4">
+                <h3 class="text-lg font-medium text-gray-800 mb-3">Complete Script</h3>
+                <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-sm overflow-x-auto">
+                    <pre id="generated-script">#!/bin/bash
+# Docker Backup Restore Script
+# Generated for container: backup-dashboard
+
+echo "Creating host directory..."
+mkdir -p /home/user/restored-backup
+
+echo "Copying files from container to host..."
+docker cp backup-dashboard:/tmp/restore_out/. /home/user/restored-backup/
+
+echo "Restore completed! Files copied to: /home/user/restored-backup"
+echo "You can now access your restored files on the host machine."</pre>
+                </div>
+            </div>
+        </div>
+
         <script>
         function showToast(message, type) {
             let toast = document.createElement('div');
@@ -426,6 +506,85 @@
                 // No preview logic here as preview is removed
             });
         });
+
+        // Docker command generation
+        function updateDockerCommands() {
+            const containerName = document.getElementById('container-name').value || 'backup-dashboard';
+            const hostDestination = document.getElementById('host-destination').value || '/home/user/restored-backup';
+            const containerPath = '/tmp/restore_out';
+
+            // Update commands
+            document.getElementById('mkdir-command').textContent = `mkdir -p ${hostDestination}`;
+            document.getElementById('docker-cp-command').textContent = `docker cp ${containerName}:${containerPath} ${hostDestination}`;
+            document.getElementById('docker-cp-multiple').textContent = `docker cp ${containerName}:${containerPath}/. ${hostDestination}/`;
+
+            // Update script
+            document.getElementById('generated-script').textContent = `#!/bin/bash
+# Docker Backup Restore Script
+# Generated for container: ${containerName}
+
+echo "Creating host directory..."
+mkdir -p ${hostDestination}
+
+echo "Copying files from container to host..."
+docker cp ${containerName}:${containerPath}/. ${hostDestination}/
+
+echo "Restore completed! Files copied to: ${hostDestination}"
+echo "You can now access your restored files on the host machine."`;
+        }
+
+        // Event listeners for Docker command updates
+        document.getElementById('container-name').addEventListener('input', updateDockerCommands);
+        document.getElementById('host-destination').addEventListener('input', updateDockerCommands);
+
+        // Copy to clipboard functionality
+        function copyToClipboard(text) {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(() => {
+                    showToast('Copied to clipboard!', 'success');
+                }).catch(() => {
+                    fallbackCopyToClipboard(text);
+                });
+            } else {
+                fallbackCopyToClipboard(text);
+            }
+        }
+
+        function fallbackCopyToClipboard(text) {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            textArea.style.top = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+
+            try {
+                document.execCommand('copy');
+                showToast('Copied to clipboard!', 'success');
+            } catch (err) {
+                showToast('Failed to copy to clipboard', 'error');
+            }
+
+            document.body.removeChild(textArea);
+        }
+
+        // Copy button event listeners
+        document.getElementById('copy-mkdir-btn').addEventListener('click', function() {
+            copyToClipboard(document.getElementById('mkdir-command').textContent);
+        });
+
+        document.getElementById('copy-docker-cp-btn').addEventListener('click', function() {
+            copyToClipboard(document.getElementById('docker-cp-command').textContent);
+        });
+
+        document.getElementById('copy-script-btn').addEventListener('click', function() {
+            copyToClipboard(document.getElementById('generated-script').textContent);
+        });
+
+        // Initialize Docker commands
+        updateDockerCommands();
         </script>
 
         <!-- Restore Progress Modal (Hidden by default) -->

@@ -58,8 +58,30 @@
             <li>
                 <button type="button"
                     x-data="statusToggle('{{ route('status.remote-host') }}', '{{ route('status.toggle-offline') }}', {{ session('manual_offline', false) ? 'true' : 'false' }})"
-                    x-init="loadManual(); if (manualOffline) { stopPolling(); online = false; } else { check(); startPolling(); }"
-                    @visibilitychange.window="if (document.hidden) { stopPolling() } else { startPolling(); poll(); }"
+                    x-init="
+                        loadManual();
+                        if (manualOffline) {
+                            stopPolling();
+                            online = false;
+                            try { sessionStorage.setItem('statusOnline', 'false'); sessionStorage.setItem('statusChecked', '1'); } catch (e) {}
+                        } else {
+                            stopPolling();
+                            // Only auto-check once per browser session
+                            try {
+                                const sc = sessionStorage.getItem('statusChecked');
+                                if (sc !== '1') {
+                                    check();
+                                } else {
+                                    const cached = sessionStorage.getItem('statusOnline');
+                                    online = cached === null ? null : JSON.parse(cached);
+                                }
+                            } catch (e) {
+                                // Fallback: no cached status; do not auto-check on navigation
+                                online = null;
+                            }
+                        }
+                    "
+                    @visibilitychange.window="if (document.hidden) { stopPolling() }"
                     @beforeunload.window="stopPolling()"
                     @click.prevent="!checking && toggle()"
                     :class="checking ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'"
@@ -113,13 +135,18 @@
             intervalId: null,
             currentCheckId: 0,
             lastAttemptFailed: false,
+            abortController: null,
             check() {
                 this.checking = true;
                 // show neutral state while validating
                 this.online = null;
                 const checkId = ++this.currentCheckId;
                 const url = this.statusUrl + (this.statusUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
-                return fetch(url, { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                // Abort previous request if still in-flight
+                try { if (this.abortController) { this.abortController.abort(); } } catch (_) {}
+                this.abortController = new AbortController();
+                const signal = this.abortController.signal;
+                return fetch(url, { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' }, signal })
                     .then(r => r.ok ? r.json() : Promise.reject())
                     .then(d => {
                         if (checkId !== this.currentCheckId) { return; }
@@ -128,20 +155,24 @@
                         this.online = !!d.online;
                         this.lastAttemptFailed = !this.online;
                         if (this.lastAttemptFailed) { setTimeout(() => { this.lastAttemptFailed = false; }, 5000); }
+                        try { sessionStorage.setItem('statusOnline', JSON.stringify(this.online)); sessionStorage.setItem('statusChecked', '1'); } catch (e) {}
                     })
                     .catch(() => {
                         if (checkId !== this.currentCheckId) { return; }
                         this.online = false;
                         this.lastAttemptFailed = true;
                         setTimeout(() => { this.lastAttemptFailed = false; }, 5000);
+                        try { sessionStorage.setItem('statusOnline', 'false'); sessionStorage.setItem('statusChecked', '1'); } catch (e) {}
                     })
                     .finally(() => {
+                        this.abortController = null;
                         if (checkId !== this.currentCheckId) { return; }
                         this.checking = false;
                     });
             },
-            poll() { if (!this.manualOffline) { this.check(); } },
-            startPolling() { this.stopPolling(); this.intervalId = setInterval(() => this.poll(), 10000); },
+            // Disable continuous polling for responsiveness; keep as no-ops
+            poll() {},
+            startPolling() {},
             stopPolling() { if (this.intervalId) { clearInterval(this.intervalId); this.intervalId = null; } },
             async saveManual() {
                 try {
@@ -171,18 +202,20 @@
                     this.online = false;
                     this.manualOffline = true;
                     await this.saveManual();
+                    try { sessionStorage.setItem('statusOnline', 'false'); sessionStorage.setItem('statusChecked', '1'); } catch (e) {}
                 } else {
                     // Attempting to go online
                     this.manualOffline = false; // Temporarily set to false to allow check() to work
                     await this.check();
                     
                     if (this.online) {
-                        // Success - stay online and resume polling
-                        this.startPolling();
+                        // Success - stay online
+                        try { sessionStorage.setItem('statusOnline', 'true'); sessionStorage.setItem('statusChecked', '1'); } catch (e) {}
                     } else {
                         // Failed - go back to manual offline
                         this.manualOffline = true;
                         this.online = false;
+                        try { sessionStorage.setItem('statusOnline', 'false'); sessionStorage.setItem('statusChecked', '1'); } catch (e) {}
                     }
                     await this.saveManual();
                 }

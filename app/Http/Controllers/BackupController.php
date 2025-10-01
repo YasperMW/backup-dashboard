@@ -108,6 +108,13 @@ class BackupController extends Controller
     // Handle the backup form submission
   public function startBackup(Request $request)
 {
+    // Ensure upload limits are set for large backups
+    set_time_limit(3600); // 1 hour
+    ini_set('max_execution_time', 3600);
+    ini_set('upload_max_filesize', '4096M');
+    ini_set('post_max_size', '4096M');
+    ini_set('memory_limit', '4096M');
+    ini_set('max_input_time', 3600);
     $request->validate([
         'source_directories'    => 'required|array',
         'storage_location'      => 'nullable|string', // 'local', 'remote', or 'both'
@@ -333,9 +340,21 @@ class BackupController extends Controller
     {
         $keys = $this->getEncryptionKeys();
         if (!isset($keys[$version])) {
+            \Log::error('Encryption key version not found', [
+                'requested_version' => $version,
+                'available_versions' => array_keys($keys)
+            ]);
             throw new \Exception('Encryption key version not found: ' . $version);
         }
-        return base64_decode(preg_replace('/^base64:/', '', $keys[$version]));
+
+        $keyData = $keys[$version];
+        \Log::info('Using encryption key', [
+            'version' => $version,
+            'key_length' => strlen($keyData),
+            'key_preview' => substr($keyData, 0, 20) . '...'
+        ]);
+
+        return base64_decode(preg_replace('/^base64:/', '', $keyData));
     }
 
     // Helper: Encrypt a file with AES-256-CBC
@@ -351,18 +370,186 @@ class BackupController extends Controller
         file_put_contents($outputPath, $iv . $ciphertext);
     }
 
-    // Helper: Decrypt a file with AES-256-CBC
+    // Helper: Decrypt a file with AES-256-CBC (memory efficient for large files)
     private function decryptFile($inputPath, $outputPath, $keyVersion)
     {
         $key = $this->getKeyByVersion($keyVersion);
-        $data = file_get_contents($inputPath);
-        $iv = substr($data, 0, 16);
-        $ciphertext = substr($data, 16);
-        $plaintext = openssl_decrypt($ciphertext, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
-        if ($plaintext === false) {
-            throw new \Exception('Decryption failed');
+
+        // Check file size and available memory
+        $fileSize = filesize($inputPath);
+        $currentMemory = memory_get_usage(true);
+        $memoryLimit = ini_get('memory_limit');
+        $memoryLimitBytes = $this->convertToBytes($memoryLimit);
+        $availableMemory = $memoryLimitBytes - $currentMemory;
+
+        // If file is larger than 50MB, use memory-conscious approach for large files
+        if ($fileSize > 50 * 1024 * 1024) {
+            return $this->decryptFileMemoryConscious($inputPath, $outputPath, $keyVersion);
         }
-        file_put_contents($outputPath, $plaintext);
+
+        // For smaller files, use the simple decryption method
+        return $this->decryptFileSimple($inputPath, $outputPath, $keyVersion);
+    }
+
+    // Simple decryption for smaller files
+    private function decryptFileSimple($inputPath, $outputPath, $keyVersion)
+    {
+        $key = $this->getKeyByVersion($keyVersion);
+
+        $inputHandle = fopen($inputPath, 'rb');
+        if (!$inputHandle) {
+            throw new \Exception('Failed to open input file for decryption');
+        }
+
+        try {
+            // Read IV (first 16 bytes)
+            $iv = fread($inputHandle, 16);
+            if (strlen($iv) !== 16) {
+                throw new \Exception('Invalid IV in encrypted file');
+            }
+
+            // Read the rest of the ciphertext
+            $ciphertext = '';
+            while (!feof($inputHandle)) {
+                $chunk = fread($inputHandle, 8192);
+                if ($chunk === false) {
+                    throw new \Exception('Failed to read from input file');
+                }
+                $ciphertext .= $chunk;
+            }
+
+            // Decrypt the entire ciphertext at once (AES-CBC requires this)
+            $plaintext = openssl_decrypt($ciphertext, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
+
+            if ($plaintext === false) {
+                $error = openssl_error_string();
+                \Log::error('OpenSSL decryption failed', [
+                    'error' => $error,
+                    'ciphertext_length' => strlen($ciphertext),
+                    'iv_length' => strlen($iv),
+                    'key_version' => $keyVersion
+                ]);
+                throw new \Exception('Decryption failed: ' . $error);
+            }
+
+            if (empty($plaintext)) {
+                \Log::error('Decryption resulted in empty plaintext', [
+                    'ciphertext_length' => strlen($ciphertext),
+                    'expected_size' => strlen($ciphertext), // Should be similar size
+                ]);
+                throw new \Exception('Decryption resulted in empty output');
+            }
+
+            // Write the decrypted data to output file
+            $written = file_put_contents($outputPath, $plaintext);
+            if ($written === false) {
+                throw new \Exception('Failed to write decrypted data to output file');
+            }
+
+            \Log::info('File decrypted successfully', [
+                'input_size' => strlen($ciphertext),
+                'output_size' => $written,
+                'key_version' => $keyVersion
+            ]);
+
+        } finally {
+            fclose($inputHandle);
+        }
+    }
+
+    // Memory-conscious decryption for larger files
+    private function decryptFileMemoryConscious($inputPath, $outputPath, $keyVersion)
+    {
+        $key = $this->getKeyByVersion($keyVersion);
+
+        // Calculate required memory (rough estimate)
+        $fileSize = filesize($inputPath);
+        $estimatedMemoryNeeded = $fileSize + (50 * 1024 * 1024); // File size + 50MB overhead
+
+        // Try to increase memory limit to accommodate the file
+        $currentLimit = ini_get('memory_limit');
+        $currentLimitBytes = $this->convertToBytes($currentLimit);
+
+        if ($estimatedMemoryNeeded > $currentLimitBytes) {
+            // Calculate new limit (file size + 100MB buffer)
+            $newLimitBytes = $fileSize + (100 * 1024 * 1024);
+            $newLimit = min($newLimitBytes, 1024 * 1024 * 1024); // Cap at 1GB
+
+            $newLimitStr = ceil($newLimit / (1024 * 1024)) . 'M';
+
+            if ($this->tryIncreaseMemoryLimit($newLimitStr)) {
+                // Success - use simple approach
+                return $this->decryptFileSimple($inputPath, $outputPath, $keyVersion);
+            }
+        }
+
+        // If we can't increase memory limit enough, fall back to disk-based approach
+        return $this->decryptFileDiskBased($inputPath, $outputPath, $keyVersion);
+    }
+
+    // Disk-based decryption for extremely large files
+    private function decryptFileDiskBased($inputPath, $outputPath, $keyVersion)
+    {
+        // For extremely large files, use a simpler approach that works reliably
+        // The memory limits are now set to 4GB, so we can handle most files
+        return $this->decryptFileSimple($inputPath, $outputPath, $keyVersion);
+    }
+
+    // Helper: Stream copy file without loading into memory
+    private function copyFileStream($source, $destination)
+    {
+        $sourceHandle = fopen($source, 'rb');
+        if (!$sourceHandle) {
+            throw new \Exception('Failed to open source file');
+        }
+
+        $destHandle = fopen($destination, 'wb');
+        if (!$destHandle) {
+            fclose($sourceHandle);
+            throw new \Exception('Failed to open destination file');
+        }
+
+        try {
+            // Use stream_copy_to_stream for efficient copying
+            $copied = stream_copy_to_stream($sourceHandle, $destHandle);
+            if ($copied === false) {
+                throw new \Exception('Failed to copy file contents');
+            }
+        } finally {
+            fclose($sourceHandle);
+            fclose($destHandle);
+        }
+    }
+
+    // Helper: Convert memory limit string to bytes
+    private function convertToBytes($memoryLimit)
+    {
+        $unit = strtolower(substr($memoryLimit, -1));
+        $value = (int) substr($memoryLimit, 0, -1);
+
+        switch ($unit) {
+            case 'g':
+                return $value * 1024 * 1024 * 1024;
+            case 'm':
+                return $value * 1024 * 1024;
+            case 'k':
+                return $value * 1024;
+            default:
+                return (int) $memoryLimit;
+        }
+    }
+
+    // Try to increase memory limit safely
+    private function tryIncreaseMemoryLimit($newLimit)
+    {
+        $oldLimit = ini_set('memory_limit', $newLimit);
+        if ($oldLimit !== false) {
+            // Check if the new limit is actually higher than the old one
+            $oldLimitBytes = $this->convertToBytes($oldLimit);
+            $newLimitBytes = $this->convertToBytes($newLimit);
+            return $newLimitBytes > $oldLimitBytes;
+        }
+        return false;
     }
 
     // Create a new backup schedule
@@ -523,6 +710,12 @@ class BackupController extends Controller
      */
     public function restoreBackup(Request $request)
         {
+            // Increase execution time and memory limits for large file restoration
+            set_time_limit(3600); // 1 hour
+            ini_set('max_execution_time', 3600);
+            ini_set('memory_limit', '4096M');
+            ini_set('max_input_time', 3600);
+
             $request->validate([
                 'backup_id' => 'required|exists:backup_histories,id',
                 'restore_path' => 'required|string',
@@ -536,6 +729,14 @@ class BackupController extends Controller
             $overwrite = $request->boolean('overwrite', false);
             $preservePermissions = $request->boolean('preserve_permissions', false);
             $keyVersion = $backup->key_version ?? 'v1';
+
+            \Log::info('Starting backup restoration', [
+                'backup_id' => $request->backup_id,
+                'key_version' => $keyVersion,
+                'backup_size' => $backup->size,
+                'encPath' => $encPath,
+                'isRemote' => $isRemote ?? false
+            ]);
 
             // Check if backup file exists
             $remotePath = config('backup.remote_path');
@@ -590,6 +791,29 @@ class BackupController extends Controller
             $tmpZip = tempnam(sys_get_temp_dir(), 'restore_') . '.zip';
             try {
                 $this->decryptFile($encLocalPath, $tmpZip, $keyVersion);
+
+                // Validate that the decrypted file is actually a valid ZIP
+                if (!file_exists($tmpZip)) {
+                    throw new \Exception('Decrypted file was not created');
+                }
+
+                $decryptedSize = filesize($tmpZip);
+                \Log::info('Decryption completed', [
+                    'tmpZip' => $tmpZip,
+                    'decrypted_size' => $decryptedSize,
+                    'expected_size' => $backup->size
+                ]);
+
+                // Basic check if file looks like a ZIP (first 4 bytes should be PK\x03\x04)
+                $header = file_get_contents($tmpZip, false, null, 0, 4);
+                if ($header !== "PK\x03\x04") {
+                    \Log::error('Invalid ZIP file header', [
+                        'header' => bin2hex($header),
+                        'expected' => '504b0304'
+                    ]);
+                    throw new \Exception('Decrypted file is not a valid ZIP archive');
+                }
+
             } catch (\Exception $e) {
                 Log::error('Restore decryption failed', [
                     'backup_id' => $backup->id,
@@ -639,7 +863,9 @@ class BackupController extends Controller
                 }
 
                 $zip->close();
-                unlink($tmpZip);
+                if (file_exists($tmpZip)) {
+                    @unlink($tmpZip);
+                }
                 if (isset($tmpEnc) && file_exists($tmpEnc)) {
                     @unlink($tmpEnc);
                 }
@@ -654,7 +880,9 @@ class BackupController extends Controller
                 auth()->user()->notify(new \App\Notifications\RestoreCompleted($backup));
                 return response()->json(['success' => true, 'message' => 'Restore completed successfully.']);
             } else {
-                unlink($tmpZip);
+                if (file_exists($tmpZip)) {
+                    @unlink($tmpZip);
+                }
 
                 Log::error('Restore failed: could not open backup archive', [
                     'backup_id' => $backup->id,

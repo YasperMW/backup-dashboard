@@ -4,6 +4,7 @@ ARG BUILDKIT_PLATFORM=linux/amd64
 # Use a specific PHP base image tag for reliability
 FROM --platform=$BUILDKIT_PLATFORM php:8.2-fpm-bullseye
 
+
 # Install system dependencies (excluding nodejs and npm to avoid old versions)
 RUN apt-get update && apt-get install -y \
     git \
@@ -25,7 +26,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
     npm --version
 
 # Install PHP extensions
-RUN docker-php-ext-install pdo_sqlite mbstring exif pcntl bcmath gd
+RUN docker-php-ext-install pdo_sqlite mbstring exif pcntl bcmath gd zip
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
@@ -39,8 +40,10 @@ COPY . .
 # Install PHP dependencies
 RUN composer install --optimize-autoloader --no-interaction --no-dev
 
-# Install Node.js dependencies and build assets
-RUN npm install && npm run build
+# Install Node.js dependencies and build assets for production
+RUN npm install && \
+    npm run build && \
+    npm cache clean --force
 
 # Create SQLite database file (if not exists) and set permissions
 RUN touch /var/www/database/database.sqlite && \
@@ -48,8 +51,17 @@ RUN touch /var/www/database/database.sqlite && \
     chmod 775 /var/www/database/database.sqlite && \
     chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 
+# Configure PHP to allow large uploads and long-running requests
+# This writes an ini file in conf.d so it is automatically loaded by PHP-FPM
+RUN set -eux; \
+    printf "post_max_size=4096M\n"        >  /usr/local/etc/php/conf.d/uploads.ini; \
+    printf "upload_max_filesize=4096M\n"  >> /usr/local/etc/php/conf.d/uploads.ini; \
+    printf "memory_limit=4096M\n"         >> /usr/local/etc/php/conf.d/uploads.ini; \
+    printf "max_execution_time=0\n"       >> /usr/local/etc/php/conf.d/uploads.ini; \
+    printf "max_input_time=0\n"           >> /usr/local/etc/php/conf.d/uploads.ini; \
+    printf "file_uploads=On\n"            >> /usr/local/etc/php/conf.d/uploads.ini
+
 # Expose port for PHP-FPM
 EXPOSE 9000
 
 # Start PHP-FPM
-CMD ["php-fpm"]

@@ -51,7 +51,12 @@ Route::middleware('auth')->group(function () {
 
     // Recovery/restore endpoints
     Route::post('/backup/restore', [\App\Http\Controllers\BackupController::class, 'restoreBackup'])->name('backup.restore');
+    Route::post('/backup/restore-from-file', [\App\Http\Controllers\BackupController::class, 'restoreFromFile'])->name('backup.restoreFromFile');
+    Route::get('/backup/test-connection', [\App\Http\Controllers\BackupController::class, 'testConnection'])->name('backup.testConnection');
     Route::post('/backup/verify-integrity', [\App\Http\Controllers\BackupController::class, 'verifyBackupIntegrity'])->name('backup.verifyIntegrity');
+    Route::get('/backup/restore/docker-cp-script', [\App\Http\Controllers\BackupController::class, 'dockerCpScript'])->name('backup.restore.dockerCpScript');
+    Route::post('/backup/restore/clean-folder', [\App\Http\Controllers\BackupController::class, 'cleanRestoreFolder'])->name('backup.restore.cleanFolder');
+    Route::post('/backup/clean-local-backups', [\App\Http\Controllers\BackupController::class, 'cleanLocalBackups'])->name('backup.cleanLocalBackups');
 
     // Recovery Routes
     Route::get('/recovery', function () {
