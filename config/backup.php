@@ -10,9 +10,9 @@ return array (
     'v2' => 'base64:ymfBiwrL25Ovp+k2io0iClBY6ihAZXlbQ7kp6C8vLJo=',
   ),
   'current_key_version' => 'v2',
-  'linux_host' => '100.81.196.91',
-  'linux_user' => 'laravel_user',
-  'linux_pass' => 'YasperYT',
-  'remote_path' => '/srv/backups/laravel',
+  'linux_host' => env('BACKUP_LINUX_HOST'),
+  'linux_user' => env('BACKUP_LINUX_USER'),
+  'linux_pass' => env('BACKUP_LINUX_PASS'),
+  'remote_path' => env('BACKUP_LINUX_PATH'),
   'docker_container' => env('DOCKER_CONTAINER_NAME', 'safeguardx'),
 );
