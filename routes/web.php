@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\TwoFactorController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\StatusController;
+use App\Http\Controllers\BackupController;
+use App\Http\Controllers\BackupRequestController;
 
 // Include test routes for debugging
 require __DIR__.'/test.php';
@@ -39,7 +41,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/backup/management', [\App\Http\Controllers\BackupController::class, 'showManagement'])->name('backup.management');
     Route::get('/backup/config', [\App\Http\Controllers\BackupController::class, 'getBackupConfig'])->name('backup.config.get');
     Route::post('/backup/config', [\App\Http\Controllers\BackupController::class, 'updateBackupConfig'])->name('backup.config.update');
-    Route::post('/backup/start', [\App\Http\Controllers\BackupController::class, 'startBackup'])->name('backup.start');
+    Route::post('/backup/start', [BackupRequestController::class, 'startBackup'])->name('backup.start');
+    Route::get('/backup/status/{jobId}', [BackupRequestController::class, 'getBackupStatus'])->name('backup.status');
+    Route::get('/backup/check-agent', [BackupRequestController::class, 'checkAgentOnline'])->name('backup.checkAgent');
+    Route::post('/backup/history/{historyId}/file-check', [BackupRequestController::class, 'queueFileExistenceCheck'])->name('backup.history.file_check');
     Route::post('/backup/source-directory', [\App\Http\Controllers\BackupController::class, 'addSourceDirectory'])->name('backup.addSourceDirectory');
     Route::delete('/backup/source-directory/{id}', [\App\Http\Controllers\BackupController::class, 'deleteSourceDirectory'])->name('backup.deleteSourceDirectory');
     Route::post('/backup/destination-directory', [\App\Http\Controllers\BackupController::class, 'addDestinationDirectory'])->name('backup.addDestinationDirectory');

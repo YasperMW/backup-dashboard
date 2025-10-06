@@ -49,19 +49,14 @@ class BackupController extends Controller
         $request->validate([
             'path' => 'required|string|unique:backup_source_directories,path',
         ]);
+        
         $path = $request->input('path');
-        if (!is_dir($path)) {
-            $msg = 'The specified directory does not exist on the server.';
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json(['success' => false, 'message' => $msg]);
-            }
-            return redirect()->route('backup.management')->withErrors(['path' => $msg]);
-        }
         BackupSourceDirectory::create(['path' => $path]);
+        
         if ($request->ajax() || $request->wantsJson()) {
             return response()->json(['success' => true]);
         }
-        return redirect()->route('backup.management')->with('status', 'Directory added successfully!');
+        return redirect()->route('backup.management')->with('status', 'Source directory path added successfully!');
     }
 
     // Delete a source directory
@@ -80,19 +75,14 @@ class BackupController extends Controller
         $request->validate([
             'path' => 'required|string|unique:backup_destination_directories,path',
         ]);
+        
         $path = $request->input('path');
-        if (!is_dir($path)) {
-            $msg = 'The specified directory does not exist on the server.';
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json(['success' => false, 'message' => $msg]);
-            }
-            return redirect()->route('backup.management')->withErrors(['destination_path' => $msg]);
-        }
         BackupDestinationDirectory::create(['path' => $path]);
+        
         if ($request->ajax() || $request->wantsJson()) {
             return response()->json(['success' => true]);
         }
-        return redirect()->route('backup.management')->with('status', 'Destination directory added successfully!');
+        return redirect()->route('backup.management')->with('status', 'Destination directory path added successfully!');
     }
 
     // Delete a destination directory
@@ -105,69 +95,149 @@ class BackupController extends Controller
         return redirect()->route('backup.management')->with('status', 'Destination directory removed successfully!');
     }
 
+    /**
+     * Check if a source path is valid for backup
+     * This handles various path formats including absolute and relative paths
+     */
+    private function isValidSource($path) {
+        // If it's a network path (starting with \\ or //), accept it
+        if (str_starts_with($path, '\\\\') || str_starts_with($path, '//')) {
+            return true;
+        }
+        
+        // Convert forward slashes to backslashes for Windows compatibility
+        $normalizedPath = str_replace('/', DIRECTORY_SEPARATOR, $path);
+        
+        // Check if it's an absolute path
+        if (str_starts_with($normalizedPath, DIRECTORY_SEPARATOR) || 
+            (strlen($normalizedPath) > 1 && $normalizedPath[1] === ':')) {
+            return true; // Accept any absolute path
+        }
+        
+        // Check if it's a relative path that exists
+        $absolutePath = base_path($normalizedPath);
+        return is_dir($absolutePath);
+    }
+
     // Handle the backup form submission
-  public function startBackup(Request $request)
-{
-    // Ensure upload limits are set for large backups
-    set_time_limit(3600); // 1 hour
-    ini_set('max_execution_time', 3600);
-    ini_set('upload_max_filesize', '4096M');
-    ini_set('post_max_size', '4096M');
-    ini_set('memory_limit', '4096M');
-    ini_set('max_input_time', 3600);
-    $request->validate([
-        'source_directories'    => 'required|array',
-        'storage_location'      => 'nullable|string', // 'local', 'remote', or 'both'
-        'destination_directory' => 'nullable|string', // for local backups
-        'backup_type'           => 'nullable|string',
-        'compression_level'     => 'nullable|string',
-    ]);
+    public function startBackup(Request $request)
+    {
+        // Ensure upload limits are set for large backups
+        ini_set('max_execution_time', 3600); // 1 hour
+        ini_set('upload_max_filesize', '4096M');
+        ini_set('post_max_size', '4096M');
+        ini_set('memory_limit', '4096M');
+        ini_set('max_input_time', 3600);
+        
+        // Validate the request
+        $validated = $request->validate([
+            'source_directory' => 'required|exists:backup_source_directories,path',
+            'destination_directory' => 'required|exists:backup_destination_directories,path',
+            'backup_type' => 'required|in:full,incremental',
+            'storage_location' => 'required|string',
+        ]);
+        
+        // Get the source and destination directory IDs
+        $source = BackupSourceDirectory::where('path', $validated['source_directory'])->first();
+        $destination = BackupDestinationDirectory::where('path', $validated['destination_directory'])->first();
+        
+        // Find an available agent
+        $agent = Agent::where('status', 'online')->first();
+        
+        if (!$agent) {
+            return back()->withErrors(['backup' => 'No available agents to process this backup.']);
+        }
+        
+        // Create a new backup job
+        $backupJob = BackupJob::create([
+            'agent_id' => $agent->id,
+            'user_id' => auth()->id(),
+            'name' => 'Manual Backup - ' . now()->format('Y-m-d H:i:s'),
+            'source_path' => $source->path,
+            'destination_path' => $destination->path,
+            'backup_type' => $validated['backup_type'],
+            'status' => 'pending',
+            'options' => [
+                'storage_location' => $validated['storage_location']
+            ],
+            'started_at' => now(),
+        ]);
+        
+        // Notify user
+        $user = auth()->user();
+        $user->notify(new BackupStarted($backupJob));
+        
+        return back()->with('status', 'Backup job has been queued and will start soon.');
+        $request->validate([
+            'source_directories'    => 'required|array',
+            'storage_location'      => 'nullable|string', // 'local', 'remote', or 'both'
+            'destination_directory' => 'nullable|string', // for local backups
+            'backup_type'           => 'nullable|string',
+            'compression_level'     => 'nullable|string',
+        ]);
 
-    $sources         = $request->input('source_directories');
-    $storageLocation = $request->input('storage_location', 'both'); // default to both
-    $backupType      = $request->input('backup_type', BackupConfiguration::first()->backup_type ?? 'full');
-    $compressionLevel= $request->input('compression_level', BackupConfiguration::first()->compression_level ?? 'none');
+        $sources         = $request->input('source_directories');
+        $storageLocation = $request->input('storage_location', 'both'); // default to both
+        $backupType      = $request->input('backup_type', BackupConfiguration::first()->backup_type ?? 'full');
+        $compressionLevel= $request->input('compression_level', BackupConfiguration::first()->compression_level ?? 'none');
 
-    $keyVersion = $this->getCurrentKeyVersion();
-    $compressionMap = [
-        'none'   => \ZipArchive::CM_STORE,
-        'low'    => \ZipArchive::CM_DEFLATE,
-        'medium' => \ZipArchive::CM_DEFLATE,
-        'high'   => \ZipArchive::CM_DEFLATE,
-    ];
-    $compressionOptions = [
-        'none'   => 0,
-        'low'    => 1,
-        'medium' => 6,
-        'high'   => 9,
-    ];
+        $keyVersion = $this->getCurrentKeyVersion();
+        $compressionMap = [
+            'none'   => \ZipArchive::CM_STORE,
+            'low'    => \ZipArchive::CM_DEFLATE,
+            'medium' => \ZipArchive::CM_DEFLATE,
+            'high'   => \ZipArchive::CM_DEFLATE,
+        ];
+        $compressionOptions = [
+            'none'   => 0,
+            'low'    => 1,
+            'medium' => 6,
+            'high'   => 9,
+        ];
 
-    $allSuccess = true;
-    $errorMsg   = null;
+        $allSuccess = true;
+        $errorMsg   = null;
 
-    foreach ($sources as $src) {
-        if (!\File::isDirectory($src)) continue;
+        foreach ($sources as $src) {
+            if (!$this->isValidSource($src)) {
+                \Log::warning("Skipping invalid source path: {$src}");
+                continue;
+            }
 
-        $dirName   = basename($src);
-        $timestamp = date('Ymd_His');
-        $tmpDir    = sys_get_temp_dir();
-        $zipFile   = $tmpDir . DIRECTORY_SEPARATOR . "{$dirName}_{$backupType}_{$timestamp}.zip";
+            $dirName   = basename($src);
+            $timestamp = date('Ymd_His');
+            $tmpDir    = sys_get_temp_dir();
+            $zipFile   = $tmpDir . DIRECTORY_SEPARATOR . "{$dirName}_{$backupType}_{$timestamp}.zip";
 
-        try {
+            try {
             // 1️⃣ Create ZIP
             $zip = new \ZipArchive();
             if ($zip->open($zipFile, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
                 throw new \Exception("Failed to create zip file for {$src}");
             }
 
+            // Normalize the source path for consistent handling
+            $normalizedSrc = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $src);
+            
+            // If it's a relative path, make it absolute relative to the base path
+            if (!str_starts_with($normalizedSrc, DIRECTORY_SEPARATOR) && 
+                !(strlen($normalizedSrc) > 1 && $normalizedSrc[1] === ':')) {
+                $normalizedSrc = base_path($normalizedSrc);
+            }
+            
+            // Use the directory iterator with appropriate options
             $files = new \RecursiveIteratorIterator(
-                new \RecursiveDirectoryIterator($src, \RecursiveDirectoryIterator::SKIP_DOTS),
+                new \RecursiveDirectoryIterator(
+                    $normalizedSrc, 
+                    \RecursiveDirectoryIterator::SKIP_DOTS | \RecursiveDirectoryIterator::CURRENT_AS_FILEINFO
+                ),
                 \RecursiveIteratorIterator::SELF_FIRST
             );
 
             foreach ($files as $file) {
                 $filePath = $file->getRealPath();
-                $relativePath = substr($filePath, strlen($src) + 1);
+                // Calculate the relative path based on the original source
+                $relativePath = ltrim(str_replace('\\', '/', substr($filePath, strlen($normalizedSrc))), '/');
 
                 if ($file->isDir()) {
                     $zip->addEmptyDir($relativePath);
@@ -370,187 +440,8 @@ class BackupController extends Controller
         file_put_contents($outputPath, $iv . $ciphertext);
     }
 
-    // Helper: Decrypt a file with AES-256-CBC (memory efficient for large files)
-    private function decryptFile($inputPath, $outputPath, $keyVersion)
-    {
-        $key = $this->getKeyByVersion($keyVersion);
-
-        // Check file size and available memory
-        $fileSize = filesize($inputPath);
-        $currentMemory = memory_get_usage(true);
-        $memoryLimit = ini_get('memory_limit');
-        $memoryLimitBytes = $this->convertToBytes($memoryLimit);
-        $availableMemory = $memoryLimitBytes - $currentMemory;
-
-        // If file is larger than 50MB, use memory-conscious approach for large files
-        if ($fileSize > 50 * 1024 * 1024) {
-            return $this->decryptFileMemoryConscious($inputPath, $outputPath, $keyVersion);
-        }
-
-        // For smaller files, use the simple decryption method
-        return $this->decryptFileSimple($inputPath, $outputPath, $keyVersion);
-    }
-
-    // Simple decryption for smaller files
-    private function decryptFileSimple($inputPath, $outputPath, $keyVersion)
-    {
-        $key = $this->getKeyByVersion($keyVersion);
-
-        $inputHandle = fopen($inputPath, 'rb');
-        if (!$inputHandle) {
-            throw new \Exception('Failed to open input file for decryption');
-        }
-
-        try {
-            // Read IV (first 16 bytes)
-            $iv = fread($inputHandle, 16);
-            if (strlen($iv) !== 16) {
-                throw new \Exception('Invalid IV in encrypted file');
-            }
-
-            // Read the rest of the ciphertext
-            $ciphertext = '';
-            while (!feof($inputHandle)) {
-                $chunk = fread($inputHandle, 8192);
-                if ($chunk === false) {
-                    throw new \Exception('Failed to read from input file');
-                }
-                $ciphertext .= $chunk;
-            }
-
-            // Decrypt the entire ciphertext at once (AES-CBC requires this)
-            $plaintext = openssl_decrypt($ciphertext, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
-
-            if ($plaintext === false) {
-                $error = openssl_error_string();
-                \Log::error('OpenSSL decryption failed', [
-                    'error' => $error,
-                    'ciphertext_length' => strlen($ciphertext),
-                    'iv_length' => strlen($iv),
-                    'key_version' => $keyVersion
-                ]);
-                throw new \Exception('Decryption failed: ' . $error);
-            }
-
-            if (empty($plaintext)) {
-                \Log::error('Decryption resulted in empty plaintext', [
-                    'ciphertext_length' => strlen($ciphertext),
-                    'expected_size' => strlen($ciphertext), // Should be similar size
-                ]);
-                throw new \Exception('Decryption resulted in empty output');
-            }
-
-            // Write the decrypted data to output file
-            $written = file_put_contents($outputPath, $plaintext);
-            if ($written === false) {
-                throw new \Exception('Failed to write decrypted data to output file');
-            }
-
-            \Log::info('File decrypted successfully', [
-                'input_size' => strlen($ciphertext),
-                'output_size' => $written,
-                'key_version' => $keyVersion
-            ]);
-
-        } finally {
-            fclose($inputHandle);
-        }
-    }
-
-    // Memory-conscious decryption for larger files
-    private function decryptFileMemoryConscious($inputPath, $outputPath, $keyVersion)
-    {
-        $key = $this->getKeyByVersion($keyVersion);
-
-        // Calculate required memory (rough estimate)
-        $fileSize = filesize($inputPath);
-        $estimatedMemoryNeeded = $fileSize + (50 * 1024 * 1024); // File size + 50MB overhead
-
-        // Try to increase memory limit to accommodate the file
-        $currentLimit = ini_get('memory_limit');
-        $currentLimitBytes = $this->convertToBytes($currentLimit);
-
-        if ($estimatedMemoryNeeded > $currentLimitBytes) {
-            // Calculate new limit (file size + 100MB buffer)
-            $newLimitBytes = $fileSize + (100 * 1024 * 1024);
-            $newLimit = min($newLimitBytes, 1024 * 1024 * 1024); // Cap at 1GB
-
-            $newLimitStr = ceil($newLimit / (1024 * 1024)) . 'M';
-
-            if ($this->tryIncreaseMemoryLimit($newLimitStr)) {
-                // Success - use simple approach
-                return $this->decryptFileSimple($inputPath, $outputPath, $keyVersion);
-            }
-        }
-
-        // If we can't increase memory limit enough, fall back to disk-based approach
-        return $this->decryptFileDiskBased($inputPath, $outputPath, $keyVersion);
-    }
-
-    // Disk-based decryption for extremely large files
-    private function decryptFileDiskBased($inputPath, $outputPath, $keyVersion)
-    {
-        // For extremely large files, use a simpler approach that works reliably
-        // The memory limits are now set to 4GB, so we can handle most files
-        return $this->decryptFileSimple($inputPath, $outputPath, $keyVersion);
-    }
-
-    // Helper: Stream copy file without loading into memory
-    private function copyFileStream($source, $destination)
-    {
-        $sourceHandle = fopen($source, 'rb');
-        if (!$sourceHandle) {
-            throw new \Exception('Failed to open source file');
-        }
-
-        $destHandle = fopen($destination, 'wb');
-        if (!$destHandle) {
-            fclose($sourceHandle);
-            throw new \Exception('Failed to open destination file');
-        }
-
-        try {
-            // Use stream_copy_to_stream for efficient copying
-            $copied = stream_copy_to_stream($sourceHandle, $destHandle);
-            if ($copied === false) {
-                throw new \Exception('Failed to copy file contents');
-            }
-        } finally {
-            fclose($sourceHandle);
-            fclose($destHandle);
-        }
-    }
-
-    // Helper: Convert memory limit string to bytes
-    private function convertToBytes($memoryLimit)
-    {
-        $unit = strtolower(substr($memoryLimit, -1));
-        $value = (int) substr($memoryLimit, 0, -1);
-
-        switch ($unit) {
-            case 'g':
-                return $value * 1024 * 1024 * 1024;
-            case 'm':
-                return $value * 1024 * 1024;
-            case 'k':
-                return $value * 1024;
-            default:
-                return (int) $memoryLimit;
-        }
-    }
-
-    // Try to increase memory limit safely
-    private function tryIncreaseMemoryLimit($newLimit)
-    {
-        $oldLimit = ini_set('memory_limit', $newLimit);
-        if ($oldLimit !== false) {
-            // Check if the new limit is actually higher than the old one
-            $oldLimitBytes = $this->convertToBytes($oldLimit);
-            $newLimitBytes = $this->convertToBytes($newLimit);
-            return $newLimitBytes > $oldLimitBytes;
-        }
-        return false;
-    }
+    // (Pruned) Obsolete server-side restore helpers removed: decryptFile*, copyFileStream,
+    // convertToBytes, tryIncreaseMemoryLimit. Restores now run on the agent.
 
     // Create a new backup schedule
     
@@ -706,195 +597,84 @@ class BackupController extends Controller
     }
 
     /**
-     * Restore a backup zip to a given path.
+     * Restore a backup using the client agent. Queues an agent job and returns job_id.
      */
     public function restoreBackup(Request $request)
-        {
-            // Increase execution time and memory limits for large file restoration
-            set_time_limit(3600); // 1 hour
-            ini_set('max_execution_time', 3600);
-            ini_set('memory_limit', '4096M');
-            ini_set('max_input_time', 3600);
+    {
+        $request->validate([
+            'backup_id' => 'required|exists:backup_histories,id',
+            'restore_path' => 'required|string',
+            'overwrite' => 'nullable|boolean',
+            'preserve_permissions' => 'nullable|boolean',
+            'key_version' => 'nullable|string',
+        ]);
 
-            $request->validate([
-                'backup_id' => 'required|exists:backup_histories,id',
-                'restore_path' => 'required|string',
-                'overwrite' => 'nullable|boolean',
-                'preserve_permissions' => 'nullable|boolean',
-            ]);
-
-            $backup = BackupHistory::findOrFail($request->backup_id);
-            $encPath = $backup->destination_directory . DIRECTORY_SEPARATOR . $backup->filename;
-            $restorePath = $request->restore_path;
-            $overwrite = $request->boolean('overwrite', false);
-            $preservePermissions = $request->boolean('preserve_permissions', false);
-            $keyVersion = $backup->key_version ?? 'v1';
-
-            \Log::info('Starting backup restoration', [
-                'backup_id' => $request->backup_id,
-                'key_version' => $keyVersion,
-                'backup_size' => $backup->size,
-                'encPath' => $encPath,
-                'isRemote' => $isRemote ?? false
-            ]);
-
-            // Check if backup file exists
-            $remotePath = config('backup.remote_path');
-            $remotePathNorm = rtrim(str_replace('\\', '/', $remotePath ?? ''), '/');
-            $destDirNorm = rtrim(str_replace('\\', '/', $backup->destination_directory ?? ''), '/');
-            $isRemote = ($backup->destination_type === 'remote') || ($remotePathNorm && $destDirNorm === $remotePathNorm);
-            $encLocalPath = $encPath;
-            if ($isRemote) {
-                $linux = new \App\Services\LinuxBackupService();
-                $remoteEncPath = str_replace('\\', '/', $encPath);
-                $remoteExists = $linux->exists($remoteEncPath);
-                $remoteDownloadPath = $remoteEncPath;
-                // Fallback to remote_path + '/' + filename in case dest dir mismatch
-                if (!$remoteExists && $remotePathNorm) {
-                    $altRemotePath = $remotePathNorm . '/' . $backup->filename;
-                    $remoteExists = $linux->exists($altRemotePath);
-                    if ($remoteExists) {
-                        $remoteDownloadPath = $altRemotePath;
-                    }
-                }
-                if (!$remoteExists) {
-                    Log::error('Restore failed: remote backup file not found', [
-                        'backup_id' => $backup->id,
-                        'attempted_paths' => [$remoteEncPath, ($remotePathNorm ? ($remotePathNorm . '/' . $backup->filename) : null)],
-                        'restorePath' => $restorePath,
-                        'key_version' => $keyVersion,
-                    ]);
-
-                    auth()->user()->notify(new \App\Notifications\RestoreFailed($backup, 'Remote backup file not found.'));
-                    return response()->json(['success' => false, 'message' => 'Remote backup file not found.']);
-                }
-                $tmpEnc = tempnam(sys_get_temp_dir(), 'remote_enc_') . '.enc';
-                if (!$linux->downloadFile($remoteDownloadPath, $tmpEnc)) {
-                    return response()->json(['success' => false, 'message' => 'Failed to download remote backup file.']);
-                }
-                $encLocalPath = $tmpEnc;
-            }
-
-            if (!$isRemote && !file_exists($encPath)) {
-                Log::error('Restore failed: backup file not found', [
-                    'backup_id' => $backup->id,
-                    'zipPath' => $encPath,
-                    'restorePath' => $restorePath,
-                    'key_version' => $keyVersion,
-                ]);
-
-                auth()->user()->notify(new \App\Notifications\RestoreFailed($backup, 'Backup file not found.'));
-                return response()->json(['success' => false, 'message' => 'Backup file not found.']);
-            }
-
-            // Decrypt to a temp file
-            $tmpZip = tempnam(sys_get_temp_dir(), 'restore_') . '.zip';
-            try {
-                $this->decryptFile($encLocalPath, $tmpZip, $keyVersion);
-
-                // Validate that the decrypted file is actually a valid ZIP
-                if (!file_exists($tmpZip)) {
-                    throw new \Exception('Decrypted file was not created');
-                }
-
-                $decryptedSize = filesize($tmpZip);
-                \Log::info('Decryption completed', [
-                    'tmpZip' => $tmpZip,
-                    'decrypted_size' => $decryptedSize,
-                    'expected_size' => $backup->size
-                ]);
-
-                // Basic check if file looks like a ZIP (first 4 bytes should be PK\x03\x04)
-                $header = file_get_contents($tmpZip, false, null, 0, 4);
-                if ($header !== "PK\x03\x04") {
-                    \Log::error('Invalid ZIP file header', [
-                        'header' => bin2hex($header),
-                        'expected' => '504b0304'
-                    ]);
-                    throw new \Exception('Decrypted file is not a valid ZIP archive');
-                }
-
-            } catch (\Exception $e) {
-                Log::error('Restore decryption failed', [
-                    'backup_id' => $backup->id,
-                    'zipPath' => $encLocalPath,
-                    'restorePath' => $restorePath,
-                    'key_version' => $keyVersion,
-                    'error' => $e->getMessage(),
-                ]);
-
-                auth()->user()->notify(new \App\Notifications\RestoreFailed($backup, $e->getMessage()));
-                return response()->json(['success' => false, 'message' => 'Decryption failed: ' . $e->getMessage()]);
-            }
-
-            // Open the zip
-            $zip = new \ZipArchive();
-            if ($zip->open($tmpZip) === TRUE) {
-                for ($i = 0; $i < $zip->numFiles; $i++) {
-                    $entry = $zip->getNameIndex($i);
-                    $target = $restorePath . DIRECTORY_SEPARATOR . $entry;
-
-                    if (substr($entry, -1) === '/') {
-                        if (!is_dir($target)) mkdir($target, 0755, true);
-                    } else {
-                        $dir = dirname($target);
-                        if (!is_dir($dir)) mkdir($dir, 0755, true);
-
-                        // Skip system/hidden files
-                        if (strtolower(basename($entry)) === 'desktop.ini') continue;
-
-                        if (file_exists($target) && !$overwrite) continue;
-
-                        $stream = $zip->getStream($entry);
-                        if ($stream) {
-                            $out = fopen($target, 'w');
-                            if ($out) {
-                                while (!feof($stream)) fwrite($out, fread($stream, 8192));
-                                fclose($out);
-                            }
-                            fclose($stream);
-
-                            if ($preservePermissions) {
-                                $stat = $zip->statIndex($i);
-                                if (isset($stat['mode'])) chmod($target, $stat['mode'] & 0777);
-                            }
-                        }
-                    }
-                }
-
-                $zip->close();
-                if (file_exists($tmpZip)) {
-                    @unlink($tmpZip);
-                }
-                if (isset($tmpEnc) && file_exists($tmpEnc)) {
-                    @unlink($tmpEnc);
-                }
-
-                Log::info('Backup restored', [
-                    'backup_id' => $backup->id,
-                    'zipPath' => $encPath,
-                    'restorePath' => $restorePath,
-                    'key_version' => $keyVersion,
-                ]);
-
-                auth()->user()->notify(new \App\Notifications\RestoreCompleted($backup));
-                return response()->json(['success' => true, 'message' => 'Restore completed successfully.']);
-            } else {
-                if (file_exists($tmpZip)) {
-                    @unlink($tmpZip);
-                }
-
-                Log::error('Restore failed: could not open backup archive', [
-                    'backup_id' => $backup->id,
-                    'zipPath' => $encPath,
-                    'restorePath' => $restorePath,
-                    'key_version' => $keyVersion,
-                ]);
-
-                auth()->user()->notify(new \App\Notifications\RestoreFailed($backup, 'Failed to open backup archive.'));
-                return response()->json(['success' => false, 'message' => 'Failed to open backup archive.']);
-            }
+        $history = BackupHistory::findOrFail($request->backup_id);
+        // Find an available agent
+        $agent = \App\Models\Agent::where('status', 'online')->first();
+        if (!$agent) {
+            return response()->json(['success' => false, 'message' => 'No online agents available'], 422);
         }
+
+        // Encryption config from env (versioned keys)
+        $algo = env('BACKUP_ENCRYPTION_ALGO', 'AES-256-CBC');
+        $currentKeyVersion = strtolower((string) ($request->input('key_version') ?? env('BACKUP_KEY_CURRENT')));
+        $envKeyName = 'BACKUP_KEY_' . strtoupper($currentKeyVersion);
+        $selectedKey = env($envKeyName);
+        if (!$selectedKey) {
+            return response()->json(['success' => false, 'message' => "Encryption key for version '{$currentKeyVersion}' not set in .env ({$envKeyName})"], 422);
+        }
+        if (str_starts_with($selectedKey, 'base64:')) {
+            $selectedKey = substr($selectedKey, 7);
+        }
+
+        // Determine archive location (local vs remote)
+        $isRemote = ($history->destination_type === 'remote');
+        $archive = [
+            'type' => $isRemote ? 'remote' : 'local',
+            'directory' => $history->destination_directory,
+            'filename' => $history->filename,
+        ];
+
+        // Build job options for restore action
+        $options = [
+            'action' => 'restore',
+            'encryption' => [
+                'enabled' => true,
+                'algorithm' => $algo,
+                'password' => $selectedKey,
+                'key_version' => $currentKeyVersion,
+            ],
+            'archive' => $archive,
+            'restore' => [
+                'path' => $request->input('restore_path'),
+                'overwrite' => (bool) $request->input('overwrite', false),
+                'preserve_permissions' => (bool) $request->input('preserve_permissions', false),
+            ],
+            // Remote target for download when archive.type == remote
+            'remote' => [
+                'host' => config('backup.linux_host') ?? env('BACKUP_LINUX_HOST'),
+                'user' => config('backup.linux_user') ?? env('BACKUP_LINUX_USER'),
+                'pass' => config('backup.linux_pass') ?? env('BACKUP_LINUX_PASS'),
+                'path' => config('backup.remote_path') ?? env('BACKUP_LINUX_PATH'),
+            ],
+        ];
+
+        // Create a restore job for the agent
+        $job = \App\Models\BackupJob::create([
+            'agent_id' => $agent->id,
+            'user_id' => auth()->id(),
+            'name' => 'Restore - ' . ($history->filename ?? 'backup') . ' - ' . now()->format('Y-m-d H:i:s'),
+            'source_path' => $history->destination_directory, // archive location (local path for local backups)
+            'destination_path' => $request->input('restore_path'),
+            'backup_type' => $history->backup_type ?? 'full',
+            'status' => 'pending',
+            'options' => $options,
+            'started_at' => now(),
+        ]);
+
+        return response()->json(['success' => true, 'message' => 'Restore job queued', 'data' => ['job_id' => $job->id]]);
+    }
 
 
     /**

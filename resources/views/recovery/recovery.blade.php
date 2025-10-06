@@ -186,83 +186,6 @@
             </button>
         </div>
 
-        <!-- Docker Deployment Restore Section -->
-        <div class="bg-white rounded-lg shadow-md p-6 mt-6">
-            <h2 class="text-xl font-semibold text-gray-800 mb-4">Docker Container Restore</h2>
-            <p class="text-sm text-gray-600 mb-4">If you're running this app in Docker and want to restore files to your host machine, use the commands below after restoration.</p>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
-                <!-- Container Name/ID -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Container Name/ID</label>
-                    <input id="container-name" type="text" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="backup-dashboard" value="backup-dashboard">
-                    <p class="mt-1 text-sm text-gray-500">Name or ID of your Docker container</p>
-                </div>
-                <!-- Host Destination -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Host Destination</label>
-                    <input id="host-destination" type="text" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="/home/user/restored-backup" value="/home/user/restored-backup">
-                    <p class="mt-1 text-sm text-gray-500">Where to copy files on your host machine</p>
-                </div>
-            </div>
-
-            <!-- Generated Commands -->
-            <div class="bg-gray-50 rounded-lg p-4 mb-4">
-                <h3 class="text-lg font-medium text-gray-800 mb-3">Generated Commands</h3>
-                <div class="space-y-3">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">1. Create host directory:</label>
-                        <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-sm overflow-x-auto">
-                            <code id="mkdir-command">mkdir -p /home/user/restored-backup</code>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">2. Copy files from container to host:</label>
-                        <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-sm overflow-x-auto">
-                            <code id="docker-cp-command">docker cp backup-dashboard:/tmp/restore_out /home/user/restored-backup</code>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">3. Alternative (if multiple files):</label>
-                        <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-sm overflow-x-auto">
-                            <code id="docker-cp-multiple">docker cp backup-dashboard:/tmp/restore_out/. /home/user/restored-backup/</code>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Copy to Clipboard Buttons -->
-            <div class="flex flex-wrap gap-2 mb-4">
-                <button id="copy-mkdir-btn" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    Copy Directory Command
-                </button>
-                <button id="copy-docker-cp-btn" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    Copy Docker Command
-                </button>
-                <button id="copy-script-btn" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    Copy Full Script
-                </button>
-            </div>
-
-            <!-- Generated Script -->
-            <div class="bg-gray-50 rounded-lg p-4">
-                <h3 class="text-lg font-medium text-gray-800 mb-3">Complete Script</h3>
-                <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-sm overflow-x-auto">
-                    <pre id="generated-script">#!/bin/bash
-# Docker Backup Restore Script
-# Generated for container: backup-dashboard
-
-echo "Creating host directory..."
-mkdir -p /home/user/restored-backup
-
-echo "Copying files from container to host..."
-docker cp backup-dashboard:/tmp/restore_out/. /home/user/restored-backup/
-
-echo "Restore completed! Files copied to: /home/user/restored-backup"
-echo "You can now access your restored files on the host machine."</pre>
-                </div>
-            </div>
-        </div>
 
         <script>
         function showToast(message, type) {
@@ -274,16 +197,8 @@ echo "You can now access your restored files on the host machine."</pre>
         }
         function showRestoreProgressModal() {
             document.getElementById('restore-progress-modal').classList.remove('hidden');
-            updateRestoreProgress(10, 'Starting...', 'Preparing files...');
-            let percent = 10;
-            let interval = setInterval(() => {
-                if (percent < 90) {
-                    percent += Math.floor(Math.random() * 10) + 1;
-                    if (percent > 90) percent = 90;
-                    updateRestoreProgress(percent, 'Restoring files...', 'Restoring...');
-                }
-            }, 400);
-            return interval;
+            // Start with a neutral state; actual text will be driven by agent polling
+            updateRestoreProgress(5, 'Pending', '');
         }
         function hideRestoreProgressModal() {
             document.getElementById('restore-progress-modal').classList.add('hidden');
@@ -416,7 +331,46 @@ echo "You can now access your restored files on the host machine."</pre>
                 });
             }
         });
-        document.getElementById('start-restore-btn').addEventListener('click', function() {
+        function pollRestoreStatus(jobId, onDone) {
+            const pollMs = 2000;
+            const maxAttempts = 180; // ~6 minutes
+            let attempts = 0;
+            function tick() {
+                attempts++;
+                fetch(`/backup/status/${jobId}`, { headers: { 'X-Requested-With': 'XMLHttpRequest' }})
+                .then(r => r.json())
+                .then(json => {
+                    if (!json.success) throw new Error('status failed');
+                    const d = json.data || {};
+                    const phase = d.progress && d.progress.phase ? d.progress.phase : null;
+                    const txt = `Status: ${d.status || ''}${phase ? ' • Phase: ' + phase : ''}`;
+                    const file = d.backup_path ? `File: ${d.backup_path}` : '';
+                    updateRestoreProgress( Math.min(95, 10 + attempts), txt, file );
+                    if (d.status === 'completed' || d.status === 'failed') {
+                        onDone(d);
+                    } else if (attempts < maxAttempts) {
+                        setTimeout(tick, pollMs);
+                    } else {
+                        onDone({ status: 'failed', error: 'Polling timeout' });
+                    }
+                })
+                .catch(() => {
+                    if (attempts < maxAttempts) setTimeout(tick, pollMs);
+                    else onDone({ status: 'failed', error: 'Polling error' });
+                });
+            }
+            tick();
+        }
+
+        async function ensureAgentOnline() {
+            try {
+                const res = await fetch('/backup/check-agent', { headers: { 'X-Requested-With': 'XMLHttpRequest' }});
+                const j = await res.json();
+                return j && j.success && j.data && j.data.online;
+            } catch { return false; }
+        }
+
+        document.getElementById('start-restore-btn').addEventListener('click', async function() {
             const selected = document.querySelector('input[name="backup_id"]:checked');
             const restorePath = document.querySelector('input[placeholder="/path/to/restore"]').value;
             const overwrite = document.querySelectorAll('input[type="checkbox"]')[0].checked;
@@ -430,7 +384,13 @@ echo "You can now access your restored files on the host machine."</pre>
                 return;
             }
             this.disabled = true;
-            let interval = showRestoreProgressModal();
+            const online = await ensureAgentOnline();
+            if (!online) {
+                this.disabled = false;
+                showToast('No online agents found. Please start the agent and try again.', 'error');
+                return;
+            }
+            showRestoreProgressModal();
             fetch('/backup/restore', {
                 method: 'POST',
                 headers: {
@@ -447,16 +407,28 @@ echo "You can now access your restored files on the host machine."</pre>
             })
             .then(res => res.json())
             .then(data => {
-                clearInterval(interval);
-                updateRestoreProgress(100, 'Finishing...', 'Finalizing restore...');
-                setTimeout(() => {
+                if (data.success && data.data && data.data.job_id) {
+                    pollRestoreStatus(data.data.job_id, (d) => {
+                        const phase = d.progress && d.progress.phase ? d.progress.phase : null;
+                        const finalText = d.status === 'completed' ? 'Completed' : `Failed${phase ? ' • Phase: ' + phase : ''}`;
+                        updateRestoreProgress(100, finalText, d.backup_path || '');
+                        setTimeout(() => {
+                            hideRestoreProgressModal();
+                            this.disabled = false;
+                            if (d.status === 'completed') {
+                                showToast('Restore completed successfully', 'success');
+                            } else {
+                                showToast(d.error || 'Restore failed', 'error');
+                            }
+                        }, 600);
+                    });
+                } else {
                     hideRestoreProgressModal();
                     this.disabled = false;
-                    showToast(data.message, data.success ? 'success' : 'error');
-                }, 800);
+                    showToast(data.message || 'Failed to queue restore', 'error');
+                }
             })
             .catch(() => {
-                clearInterval(interval);
                 hideRestoreProgressModal();
                 this.disabled = false;
                 showToast('Restore failed.', 'error');
@@ -507,84 +479,6 @@ echo "You can now access your restored files on the host machine."</pre>
             });
         });
 
-        // Docker command generation
-        function updateDockerCommands() {
-            const containerName = document.getElementById('container-name').value || 'backup-dashboard';
-            const hostDestination = document.getElementById('host-destination').value || '/home/user/restored-backup';
-            const containerPath = '/tmp/restore_out';
-
-            // Update commands
-            document.getElementById('mkdir-command').textContent = `mkdir -p ${hostDestination}`;
-            document.getElementById('docker-cp-command').textContent = `docker cp ${containerName}:${containerPath} ${hostDestination}`;
-            document.getElementById('docker-cp-multiple').textContent = `docker cp ${containerName}:${containerPath}/. ${hostDestination}/`;
-
-            // Update script
-            document.getElementById('generated-script').textContent = `#!/bin/bash
-# Docker Backup Restore Script
-# Generated for container: ${containerName}
-
-echo "Creating host directory..."
-mkdir -p ${hostDestination}
-
-echo "Copying files from container to host..."
-docker cp ${containerName}:${containerPath}/. ${hostDestination}/
-
-echo "Restore completed! Files copied to: ${hostDestination}"
-echo "You can now access your restored files on the host machine."`;
-        }
-
-        // Event listeners for Docker command updates
-        document.getElementById('container-name').addEventListener('input', updateDockerCommands);
-        document.getElementById('host-destination').addEventListener('input', updateDockerCommands);
-
-        // Copy to clipboard functionality
-        function copyToClipboard(text) {
-            if (navigator.clipboard) {
-                navigator.clipboard.writeText(text).then(() => {
-                    showToast('Copied to clipboard!', 'success');
-                }).catch(() => {
-                    fallbackCopyToClipboard(text);
-                });
-            } else {
-                fallbackCopyToClipboard(text);
-            }
-        }
-
-        function fallbackCopyToClipboard(text) {
-            const textArea = document.createElement('textarea');
-            textArea.value = text;
-            textArea.style.position = 'fixed';
-            textArea.style.left = '-999999px';
-            textArea.style.top = '-999999px';
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-
-            try {
-                document.execCommand('copy');
-                showToast('Copied to clipboard!', 'success');
-            } catch (err) {
-                showToast('Failed to copy to clipboard', 'error');
-            }
-
-            document.body.removeChild(textArea);
-        }
-
-        // Copy button event listeners
-        document.getElementById('copy-mkdir-btn').addEventListener('click', function() {
-            copyToClipboard(document.getElementById('mkdir-command').textContent);
-        });
-
-        document.getElementById('copy-docker-cp-btn').addEventListener('click', function() {
-            copyToClipboard(document.getElementById('docker-cp-command').textContent);
-        });
-
-        document.getElementById('copy-script-btn').addEventListener('click', function() {
-            copyToClipboard(document.getElementById('generated-script').textContent);
-        });
-
-        // Initialize Docker commands
-        updateDockerCommands();
         </script>
 
         <!-- Restore Progress Modal (Hidden by default) -->

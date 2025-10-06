@@ -343,12 +343,87 @@ document.addEventListener('DOMContentLoaded', function() {
     const progressMsg = document.getElementById('backup-progress-message');
     const submitBtn = document.getElementById('start-backup-btn');
 
+    // Simple poller that reuses the existing animation UI
+    function pollBackupStatus(jobId) {
+        const pollIntervalMs = 2000;
+        const maxAttempts = 180; // ~6 minutes
+        let attempts = 0;
+
+        function tick() {
+            attempts++;
+            fetch(`/backup/status/${jobId}`, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(r => r.json())
+            .then(json => {
+                if (!json.success) throw new Error('Status fetch failed');
+                const data = json.data || {};
+
+                // Keep the same spinner visible and update message text only
+                progressDiv.classList.remove('hidden');
+                const parts = [`Status: ${data.status}`];
+                if (data.files_processed) parts.push(`Files: ${data.files_processed}`);
+                if (data.size_processed) parts.push(`Size: ${Math.round((data.size_processed||0)/1024/1024)} MB`);
+                if (data.error) parts.push(`Error: ${data.error}`);
+                progressMsg.textContent = parts.join(' • ');
+
+                if (data.status === 'completed' || data.status === 'failed') {
+                    submitBtn.disabled = false;
+                    progressDiv.classList.add('hidden');
+                    if (data.status === 'completed') {
+                        showToast('Backup completed successfully!', 'success');
+                        if (typeof refreshBackupHistoryTable === 'function') {
+                            refreshBackupHistoryTable();
+                        }
+                        const lastSpan = document.getElementById('last-backup-relative');
+                        if (lastSpan) lastSpan.textContent = 'just now';
+                    } else {
+                        showToast(data.error ? `Backup failed: ${data.error}` : 'Backup failed.', 'error');
+                    }
+                } else if (attempts < maxAttempts) {
+                    setTimeout(tick, pollIntervalMs);
+                } else {
+                    // Stop polling after timeout but keep UI usable
+                    submitBtn.disabled = false;
+                    progressDiv.classList.add('hidden');
+                    showToast('Stopping status polling due to timeout.', 'warning');
+                }
+            })
+            .catch(() => {
+                if (attempts < maxAttempts) {
+                    setTimeout(tick, pollIntervalMs);
+                } else {
+                    submitBtn.disabled = false;
+                    progressDiv.classList.add('hidden');
+                    showToast('Error polling backup status.', 'error');
+                }
+            });
+        }
+
+        tick();
+    }
+
+    async function ensureAgentOnline() {
+        try {
+            const res = await fetch('/backup/check-agent', { headers: { 'X-Requested-With': 'XMLHttpRequest' }});
+            const j = await res.json();
+            return j && j.success && j.data && j.data.online;
+        } catch { return false; }
+    }
+
     if (form) {
-        form.addEventListener('submit', function(e) {
+        form.addEventListener('submit', async function(e) {
             e.preventDefault();
-            progressDiv.classList.remove('hidden');
-            progressMsg.textContent = 'Backup in progress...';
             submitBtn.disabled = true;
+            const online = await ensureAgentOnline();
+            if (!online) {
+                submitBtn.disabled = false;
+                showToast('No online agents found. Please start the agent and try again.', 'error');
+                return;
+            }
+            // Show the same animation under the button
+            progressDiv.classList.remove('hidden');
+            progressMsg.textContent = 'Creating backup job...';
 
             const formData = new FormData(form);
             fetch(form.action, {
@@ -361,20 +436,18 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .then(response => response.json())
             .then(data => {
-                progressDiv.classList.add('hidden');
-                submitBtn.disabled = false;
-                if (data.success) {
-                    showToast('Backup completed successfully!', 'success');
-                    refreshBackupHistoryTable();
-                    const lastSpan = document.getElementById('last-backup-relative');
-                    if (lastSpan) lastSpan.textContent = 'just now';
+                if (data.success && data.data && data.data.job_id) {
+                    // Start polling without changing the animation block
+                    pollBackupStatus(data.data.job_id);
                 } else {
+                    submitBtn.disabled = false;
+                    progressDiv.classList.add('hidden');
                     showToast(data.message || 'Backup failed.', 'error');
                 }
             })
-            .catch(err => {
-                progressDiv.classList.add('hidden');
+            .catch(() => {
                 submitBtn.disabled = false;
+                progressDiv.classList.add('hidden');
                 showToast('Backup failed. Please try again.', 'error');
             });
         });
