@@ -26,10 +26,7 @@
         @php
             $backups = \App\Models\BackupHistory::orderByDesc('created_at')->get();
             $showLimit = 5;
-            $manualOffline = session('manual_offline', false);
-            $linux = new \App\Services\LinuxBackupService();
-            $actuallyOffline = $manualOffline ? false : !$linux->isReachable(5); // Skip connectivity check if manually offline
-            $isSystemOffline = $manualOffline || $actuallyOffline;
+            // Agent-driven checks only: do not gate UI by Linux reachability
             $remotePath = config('backup.remote_path');
             $remotePathNorm = $remotePath ? rtrim(str_replace('\\', '/', $remotePath), '/') : '';
         @endphp
@@ -38,9 +35,8 @@
                 @php
     $destDirNorm = rtrim(str_replace('\\', '/', $history->destination_directory ?? ''), '/');
     $isRemote = ($history->destination_type === 'remote') || ($remotePathNorm && $destDirNorm === $remotePathNorm);
-    $isOffline = $isSystemOffline && $isRemote;
 @endphp
-<tr class="backup-row{{ $i >= $showLimit ? ' hidden-row' : '' }} {{ $isOffline ? 'no-connection' : '' }}" data-history-id="{{ $history->id }}" data-is-remote="{{ $isRemote ? '1' : '0' }}" @if($isOffline) title="No connection to remote server" @endif>
+<tr class="backup-row{{ $i >= $showLimit ? ' hidden-row' : '' }}" data-history-id="{{ $history->id }}" data-is-remote="{{ $isRemote ? '1' : '0' }}">
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $history->created_at }}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $history->source_directory }}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -55,32 +51,10 @@
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $history->filename }}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $history->size ? number_format($history->size / 1048576, 2) . ' MB' : '-' }}</td>
                     <td class="px-6 py-4 whitespace-nowrap">
-                        @php
-                            $filePath = $history->destination_directory . DIRECTORY_SEPARATOR . $history->filename;
-                            
-                            if ($isOffline) {
-                                $fileExists = null; // unknown; no connection
-                            } else if ($isRemote) {
-                                $remoteFilePath = str_replace('\\', '/', $filePath);
-                                $fileExists = $linux->exists($remoteFilePath);
-                                if (!$fileExists && $remotePathNorm) {
-                                    $fallback = $remotePathNorm . '/' . $history->filename;
-                                    $fileExists = $linux->exists($fallback);
-                                }
-                            } else {
-                                $fileExists = file_exists($filePath);
-                            }
-                        @endphp
-                        @if($isRemote && $fileExists === null)
-                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">No connection</span>
-                        @elseif(!$fileExists)
-                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">Missing</span>
-                        @elseif($history->status === 'completed')
-                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Completed</span>
-                        @elseif($history->status === 'failed')
+                        @if($history->status === 'failed')
                             <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Failed</span>
                         @else
-                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Pending</span>
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">Unknown</span>
                         @endif
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{{ $history->integrity_hash ?? '-' }}</td>
@@ -112,11 +86,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 row.classList.remove('hidden-row');
             });
 document.addEventListener('DOMContentLoaded', function() {
-    // Auto-verify for visible LOCAL rows only (do not change remote checks)
+    // Auto-verify for first 5 visible rows (both local and remote) via agent
     const rows = Array.from(document.querySelectorAll('#backup-history-tbody tr')).filter(tr => !tr.classList.contains('hidden-row'));
-    const localRows = rows.filter(tr => tr.getAttribute('data-is-remote') === '0');
-    // Limit to first 5 visible local rows to avoid spamming
-    const toCheck = localRows.slice(0, 5);
+    const toCheck = rows.slice(0, 5);
     let index = 0;
     function next() {
         if (index >= toCheck.length) return;
@@ -149,7 +121,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800';
                 badge.textContent = 'Checking...';
             }
-            fetch(`/backup/history/${historyId}/file-check`, {
+            const isRemote = row.getAttribute('data-is-remote') === '1';
+            const endpoint = isRemote ? `/backup/history/${historyId}/remote-file-check` : `/backup/history/${historyId}/file-check`;
+            fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest',

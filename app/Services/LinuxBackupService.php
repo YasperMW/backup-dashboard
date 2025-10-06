@@ -66,18 +66,8 @@ class LinuxBackupService
         return false; // File does not exist
     }
 
-    /**
-     * Check if a remote file exists via SFTP
-     */
-    public function exists(string $remoteFile): bool
-    {
-        $sftp = new SFTP($this->host);
-        if (!$sftp->login($this->user, $this->pass)) {
-            Log::error('SFTP login failed on exists()', ['user' => $this->user, 'host' => $this->host]);
-            return false;
-        }
-        return $sftp->file_exists($remoteFile);
-    }
+    
+ 
 
     /**
      * Download a remote file to a local path

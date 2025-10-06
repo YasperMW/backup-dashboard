@@ -9,6 +9,7 @@ use App\Models\BackupHistory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Cache;
 
 class AgentTaskController extends Controller
 {
@@ -34,6 +35,18 @@ class AgentTaskController extends Controller
             $agent->last_seen = now();
         }
         $agent->save();
+
+        // Write a cache heartbeat (no DB needed for availability checks)
+        try {
+            Cache::put("agent:{$agent->id}:last_seen_at", now()->timestamp, 300);
+            // Track active agent IDs (simple array). Keep for 1 day.
+            $key = 'agents:active_ids';
+            $ids = Cache::get($key, []);
+            if (!in_array($agent->id, $ids, true)) {
+                $ids[] = $agent->id;
+                Cache::put($key, $ids, 86400);
+            }
+        } catch (\Throwable $e) {}
 
         return response()->json([
             'success' => true,
@@ -65,9 +78,13 @@ class AgentTaskController extends Controller
             ->where('status', 'pending')
             ->get()
             ->map(function($job) {
+                $type = data_get($job->options, 'type');
+                if (!$type) {
+                    $type = data_get($job->options, 'action', 'backup');
+                }
                 return [
                     'id' => $job->id,
-                    'type' => data_get($job->options, 'action', 'backup'),
+                    'type' => $type,
                     'name' => $job->name,
                     'source_path' => $job->source_path,
                     'destination_path' => $job->destination_path,
@@ -154,29 +171,61 @@ class AgentTaskController extends Controller
                 $options = is_array($task->options) ? $task->options : [];
                 $enc = $options['encryption'] ?? [];
                 $compression = $options['compression_level'] ?? 'none';
-                $historyData = [
-                    'source_directory' => $task->source_path,
-                    'destination_directory' => $task->destination_path,
-                    'destination_type' => $options['storage_location'] ?? 'local',
-                    'filename' => $task->backup_path ? basename($task->backup_path) : null,
-                    'size' => $task->size ?? $request->input('size'),
-                    'status' => $task->status,
-                    'backup_type' => $task->backup_type,
-                    'compression_level' => $compression,
-                    'key_version' => $enc['key_version'] ?? null,
-                    'started_at' => $task->started_at,
-                    'completed_at' => $task->completed_at,
-                    'integrity_hash' => $task->checksum ?? $request->input('checksum'),
-                    'integrity_verified_at' => null,
-                    'error_message' => $task->status === 'failed' ? ($task->error ?: $request->input('error')) : null,
-                ];
+                // Prefer remote artifact details if provided by agent
+                $remotePath = $request->input('remote_path');
+                $storageLocation = $options['storage_location'] ?? 'local';
+
+                // Helper to build history payload
+                $buildHistory = function(string $destDir, string $destType, ?string $fileName) use ($task, $compression, $enc, $request) {
+                    return [
+                        'source_directory' => $task->source_path,
+                        'destination_directory' => $destDir,
+                        'destination_type' => $destType,
+                        'filename' => $fileName,
+                        'size' => $task->size ?? $request->input('size'),
+                        'status' => $task->status,
+                        'backup_type' => $task->backup_type,
+                        'compression_level' => $compression,
+                        'key_version' => $enc['key_version'] ?? null,
+                        'started_at' => $task->started_at,
+                        'completed_at' => $task->completed_at,
+                        'integrity_hash' => $task->checksum ?? $request->input('checksum'),
+                        'integrity_verified_at' => null,
+                        'error_message' => $task->status === 'failed' ? ($task->error ?: $request->input('error')) : null,
+                    ];
+                };
+
                 try {
-                    BackupHistory::create($historyData);
+                    if ($storageLocation === 'both') {
+                        // Create local entry if we have a local artifact
+                        if ($task->backup_path) {
+                            $localDir = $task->destination_path;
+                            $localFile = basename($task->backup_path);
+                            BackupHistory::create($buildHistory($localDir, 'local', $localFile));
+                        }
+                        // Create remote entry if remote_path provided
+                        if (is_string($remotePath) && $remotePath !== '') {
+                            $remoteDir = str_replace('\\', '/', dirname($remotePath));
+                            $remoteFile = basename($remotePath);
+                            BackupHistory::create($buildHistory($remoteDir, 'remote', $remoteFile));
+                        }
+                    } else {
+                        // Single entry (local or remote)
+                        if (is_string($remotePath) && $remotePath !== '' && $storageLocation === 'remote') {
+                            $destDir = str_replace('\\', '/', dirname($remotePath));
+                            $fileName = basename($remotePath);
+                            BackupHistory::create($buildHistory($destDir, 'remote', $fileName));
+                        } else {
+                            $destDir = $task->destination_path;
+                            $fileName = $task->backup_path ? basename($task->backup_path) : null;
+                            $destType = $storageLocation;
+                            BackupHistory::create($buildHistory($destDir, $destType, $fileName));
+                        }
+                    }
                 } catch (\Throwable $ex) {
                     \Log::error('Failed to write backup history', [
                         'taskId' => $taskId,
                         'error' => $ex->getMessage(),
-                        'data' => $historyData,
                     ]);
                 }
             }

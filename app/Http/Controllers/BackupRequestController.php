@@ -41,52 +41,6 @@ class BackupRequestController extends Controller
         if (!$sourcePath) {
             return $this->respond($request, false, 'Please select at least one source directory.');
         }
-
-    /**
-     * Queue a file existence check on the agent for the given backup history record
-     */
-    public function queueFileExistenceCheck(Request $request, int $historyId)
-    {
-        $history = BackupHistory::findOrFail($historyId);
-
-        // Choose the most recently online agent
-        $agentQuery = Agent::query()->where('status','online');
-        if (Schema::hasColumn('agents','last_seen_at')) {
-            $agentQuery->orderByDesc('last_seen_at');
-        } elseif (Schema::hasColumn('agents','last_seen')) {
-            $agentQuery->orderByDesc('last_seen');
-        }
-        $agent = $agentQuery->first();
-        if (!$agent) {
-            return response()->json(['success' => false, 'message' => 'No online agent available to perform file check.'], 422);
-        }
-
-        $dir = $history->destination_directory ?? '';
-        $filename = $history->filename ?? '';
-        if (!$dir || !$filename) {
-            return response()->json(['success' => false, 'message' => 'History record missing destination or filename.'], 422);
-        }
-
-        $job = BackupJob::create([
-            'agent_id' => $agent->id,
-            'user_id' => auth()->id(),
-            'name' => 'File Check - ' . $filename,
-            'source_path' => $dir,
-            'destination_path' => $dir,
-            'backup_type' => 'full',
-            'status' => 'pending',
-            'options' => [
-                'type' => 'file_check',
-                'file' => [
-                    'directory' => $dir,
-                    'filename' => $filename,
-                ],
-            ],
-            'started_at' => now(),
-        ]);
-
-        return response()->json(['success' => true, 'data' => ['job_id' => $job->id]]);
-    }
         
         // Get the source directory record
         $source = BackupSourceDirectory::where('path', $sourcePath)->first();
@@ -199,45 +153,135 @@ class BackupRequestController extends Controller
     }
 
     /**
+     * Queue a remote file existence check via the agent (uses agent Paramiko instead of PHP SFTP)
+     */
+    public function queueRemoteFileCheck(Request $request, int $historyId)
+    {
+        $history = \App\Models\BackupHistory::findOrFail($historyId);
+
+        // Choose the most recently seen agent (cache-based online check is elsewhere)
+        $agentQuery = Agent::query();
+        if (Schema::hasColumn('agents','last_seen_at')) {
+            $agentQuery->orderByDesc('last_seen_at');
+        } elseif (Schema::hasColumn('agents','last_seen')) {
+            $agentQuery->orderByDesc('last_seen');
+        } else {
+            $agentQuery->where('status','online');
+        }
+        $agent = $agentQuery->first();
+        if (!$agent) {
+            return response()->json(['success' => false, 'message' => 'No agent available to perform remote check.'], 422);
+        }
+
+        $dir = $history->destination_directory ?? '';
+        $filename = $history->filename ?? '';
+        if (!$dir) {
+            return response()->json(['success' => false, 'message' => 'Destination directory missing on history record.'], 422);
+        }
+
+        // Pull remote credentials from config
+        $remote = [
+            'host' => config('backup.linux_host'),
+            'user' => config('backup.linux_user'),
+            'pass' => config('backup.linux_pass'),
+            'path' => config('backup.remote_path'),
+        ];
+        if (!$remote['host'] || !$remote['user']) {
+            return response()->json(['success' => false, 'message' => 'Remote credentials not configured.'], 422);
+        }
+
+        $job = BackupJob::create([
+            'agent_id' => $agent->id,
+            'user_id' => auth()->id(),
+            'name' => 'Remote File Check - ' . ($filename ?: basename($dir)),
+            'source_path' => $dir,
+            'destination_path' => $dir,
+            'backup_type' => 'full',
+            'status' => 'pending',
+            'options' => [
+                'type' => 'remote_file_check',
+                'file' => [
+                    'directory' => $dir,
+                    'filename' => $filename,
+                ],
+                'remote' => $remote,
+            ],
+            'started_at' => now(),
+        ]);
+
+        return response()->json(['success' => true, 'data' => ['job_id' => $job->id]]);
+    }
+
+    /**
+     * Queue a file existence check on the agent for the given backup history record
+     */
+    public function queueFileExistenceCheck(Request $request, int $historyId)
+    {
+        $history = BackupHistory::findOrFail($historyId);
+
+        // Choose the most recently online agent
+        $agentQuery = Agent::query()->where('status','online');
+        if (Schema::hasColumn('agents','last_seen_at')) {
+            $agentQuery->orderByDesc('last_seen_at');
+        } elseif (Schema::hasColumn('agents','last_seen')) {
+            $agentQuery->orderByDesc('last_seen');
+        }
+        $agent = $agentQuery->first();
+        if (!$agent) {
+            return response()->json(['success' => false, 'message' => 'No online agent available to perform file check.'], 422);
+        }
+
+        $dir = $history->destination_directory ?? '';
+        $filename = $history->filename ?? '';
+        if (!$dir || !$filename) {
+            return response()->json(['success' => false, 'message' => 'History record missing destination or filename.'], 422);
+        }
+
+        $job = BackupJob::create([
+            'agent_id' => $agent->id,
+            'user_id' => auth()->id(),
+            'name' => 'File Check - ' . $filename,
+            'source_path' => $dir,
+            'destination_path' => $dir,
+            'backup_type' => 'full',
+            'status' => 'pending',
+            'options' => [
+                'type' => 'file_check',
+                'file' => [
+                    'directory' => $dir,
+                    'filename' => $filename,
+                ],
+            ],
+            'started_at' => now(),
+        ]);
+
+        return response()->json(['success' => true, 'data' => ['job_id' => $job->id]]);
+    }
+
+    /**
      * Check if any agent is online for initiating backup/restore actions
      */
     public function checkAgentOnline(Request $request)
     {
         try {
-            // Consider agent online if either:
-            // - status = 'online', OR
-            // - last_seen_at (or last_seen) is within the last 15 minutes
-            $hasLastSeenAt = Schema::hasColumn('agents', 'last_seen_at');
-            $hasLastSeen   = Schema::hasColumn('agents', 'last_seen');
-            $recentCutoff  = now()->subMinutes(15);
-            $query = Agent::query();
-            $query->where('status', 'online');
-            if ($hasLastSeenAt) {
-                $query->orWhere('last_seen_at', '>=', $recentCutoff);
-            } elseif ($hasLastSeen) {
-                $query->orWhere('last_seen', '>=', $recentCutoff);
+            // Cache-only approach: AgentTaskController@heartbeat writes
+            //  - agent:{id}:last_seen_at (timestamp)
+            //  - agents:active_ids (array of ids)
+            $activeIds = \Cache::get('agents:active_ids', []);
+            $now = time();
+            $ttlSeconds = 5; // consider online if heartbeat within last 5s
+            $online = false;
+            foreach ($activeIds as $aid) {
+                $ts = \Cache::get("agent:{$aid}:last_seen_at");
+                if (is_numeric($ts) && ($now - (int)$ts) <= $ttlSeconds) {
+                    $online = true;
+                    break;
+                }
             }
-            $online = $query->exists();
-            // Debug log to help diagnose environment mismatches
-            try {
-                Log::debug('Agent online check', [
-                    'online' => $online,
-                    'status_online_count' => Agent::where('status','online')->count(),
-                    'recent_last_seen_at_count' => $hasLastSeenAt ? Agent::where('last_seen_at','>=', $recentCutoff)->count() : null,
-                    'recent_last_seen_count'    => (!$hasLastSeenAt && $hasLastSeen) ? Agent::where('last_seen','>=', $recentCutoff)->count() : null,
-                ]);
-            } catch (\Throwable $e) {}
-
-            return response()->json([
-                'success' => true,
-                'data' => [ 'online' => (bool) $online ]
-            ]);
+            return response()->json(['success' => true, 'data' => ['online' => $online]]);
         } catch (\Throwable $e) {
-            Log::error('checkAgentOnline failed', ['error' => $e->getMessage()]);
-            return response()->json([
-                'success' => true,
-                'data' => [ 'online' => false ]
-            ], 200);
+            Log::error('checkAgentOnline cache check failed', ['error' => $e->getMessage()]);
+            return response()->json(['success' => true, 'data' => ['online' => false]]);
         }
     }
 

@@ -45,6 +45,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/backup/status/{jobId}', [BackupRequestController::class, 'getBackupStatus'])->name('backup.status');
     Route::get('/backup/check-agent', [BackupRequestController::class, 'checkAgentOnline'])->name('backup.checkAgent');
     Route::post('/backup/history/{historyId}/file-check', [BackupRequestController::class, 'queueFileExistenceCheck'])->name('backup.history.file_check');
+    Route::post('/backup/history/{historyId}/remote-file-check', [BackupRequestController::class, 'queueRemoteFileCheck'])->name('backup.history.remote_file_check');
     Route::post('/backup/source-directory', [\App\Http\Controllers\BackupController::class, 'addSourceDirectory'])->name('backup.addSourceDirectory');
     Route::delete('/backup/source-directory/{id}', [\App\Http\Controllers\BackupController::class, 'deleteSourceDirectory'])->name('backup.deleteSourceDirectory');
     Route::post('/backup/destination-directory', [\App\Http\Controllers\BackupController::class, 'addDestinationDirectory'])->name('backup.addDestinationDirectory');
