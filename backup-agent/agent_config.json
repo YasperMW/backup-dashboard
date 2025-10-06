@@ -1,0 +1,9 @@
+{
+  "server_url": "http://192.168.43.12:80",
+  "token": "a59c39d6199a1498c40ea4f03d93d5df9eaf6f09968603414d538627f858d12d",
+  "agent_id": 12,
+  "name": "safeguard",
+  "hostname": "kali",
+  "os": "Linux 6.12.38+kali-amd64",
+  "registered_at": "2025-10-06T23:03:40Z"
+}
