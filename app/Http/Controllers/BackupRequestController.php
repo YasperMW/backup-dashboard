@@ -56,11 +56,13 @@ class BackupRequestController extends Controller
             ['description' => 'Auto-created destination']
         );
         
-        // Find an available agent
-        $agent = Agent::where('status', 'online')->first();
+        // Find an available agent registered to the authenticated user
+        $agent = Agent::where('status', 'online')
+            ->where('user_id', auth()->id())
+            ->first();
         
         if (!$agent) {
-            return $this->respond($request, false, 'No available agents to process this backup.');
+            return $this->respond($request, false, 'No available agents registered to your account are online.');
         }
         
         // Build mandatory encryption config from env (versioned keys)
@@ -159,8 +161,8 @@ class BackupRequestController extends Controller
     {
         $history = \App\Models\BackupHistory::findOrFail($historyId);
 
-        // Choose the most recently seen agent (cache-based online check is elsewhere)
-        $agentQuery = Agent::query();
+        // Choose the most recently seen agent belonging to the authenticated user
+        $agentQuery = Agent::query()->where('user_id', auth()->id());
         if (Schema::hasColumn('agents','last_seen_at')) {
             $agentQuery->orderByDesc('last_seen_at');
         } elseif (Schema::hasColumn('agents','last_seen')) {
@@ -170,21 +172,27 @@ class BackupRequestController extends Controller
         }
         $agent = $agentQuery->first();
         if (!$agent) {
-            return response()->json(['success' => false, 'message' => 'No agent available to perform remote check.'], 422);
+            return response()->json(['success' => false, 'message' => 'No agent registered to your account is available to perform remote check.'], 422);
         }
 
         $dir = $history->destination_directory ?? '';
+        // Normalize to POSIX-style for SFTP
+        $dir = str_replace('\\', '/', $dir);
+        $dir = rtrim($dir, '/');
         $filename = $history->filename ?? '';
         if (!$dir) {
             return response()->json(['success' => false, 'message' => 'Destination directory missing on history record.'], 422);
         }
+        if (!$filename) {
+            return response()->json(['success' => false, 'message' => 'Backup filename missing on history record.'], 422);
+        }
 
-        // Pull remote credentials from config
+        // Pull remote credentials from config, but use the history's directory as path to be precise
         $remote = [
             'host' => config('backup.linux_host'),
             'user' => config('backup.linux_user'),
             'pass' => config('backup.linux_pass'),
-            'path' => config('backup.remote_path'),
+            'path' => $history->destination_directory ?: (config('backup.remote_path') ?? ''),
         ];
         if (!$remote['host'] || !$remote['user']) {
             return response()->json(['success' => false, 'message' => 'Remote credentials not configured.'], 422);
@@ -204,7 +212,8 @@ class BackupRequestController extends Controller
                     'directory' => $dir,
                     'filename' => $filename,
                 ],
-                'remote' => $remote,
+                // Ensure the agent has exact directory context and the filename
+                'remote' => array_merge($remote, ['filename' => $filename]),
             ],
             'started_at' => now(),
         ]);
@@ -219,8 +228,8 @@ class BackupRequestController extends Controller
     {
         $history = BackupHistory::findOrFail($historyId);
 
-        // Choose the most recently online agent
-        $agentQuery = Agent::query()->where('status','online');
+        // Choose the most recently online agent belonging to the authenticated user
+        $agentQuery = Agent::query()->where('status','online')->where('user_id', auth()->id());
         if (Schema::hasColumn('agents','last_seen_at')) {
             $agentQuery->orderByDesc('last_seen_at');
         } elseif (Schema::hasColumn('agents','last_seen')) {
@@ -228,7 +237,7 @@ class BackupRequestController extends Controller
         }
         $agent = $agentQuery->first();
         if (!$agent) {
-            return response()->json(['success' => false, 'message' => 'No online agent available to perform file check.'], 422);
+            return response()->json(['success' => false, 'message' => 'No online agent registered to your account is available to perform file check.'], 422);
         }
 
         $dir = $history->destination_directory ?? '';

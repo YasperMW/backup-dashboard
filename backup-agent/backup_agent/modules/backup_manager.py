@@ -13,6 +13,7 @@ import zipfile
 import sys
 import stat
 import time
+import fnmatch
 
 # Optional dependency for SFTP uploads
 try:
@@ -376,11 +377,62 @@ class BackupManager:
         """Perform a full backup from source to destination"""
         self.logger.info(f"Starting full backup from {source} to {destination}")
         
+        # Resolve excludes from config/task if present on self.config under last_task
+        task = (self.config or {}).get('last_task') or {}
+        excludes = self._build_excludes(task)
+
+        def excluded(rel: str) -> bool:
+            return self._path_is_excluded(rel, excludes)
+
         if os.path.isfile(source):
-            shutil.copy2(source, destination)
+            os.makedirs(destination, exist_ok=True)
+            dst = os.path.join(destination, os.path.basename(source))
+            try:
+                shutil.copy2(source, dst)
+            except PermissionError as pe:
+                self.logger.warning(f"Permission denied copying file: {source}: {pe}. Skipping.")
+            except Exception as e:
+                # Re-raise non-permission errors
+                raise e
         else:
-            shutil.copytree(source, os.path.join(destination, os.path.basename(source)), 
-                          dirs_exist_ok=True)
+            base_name = os.path.basename(os.path.abspath(source)) or 'source'
+            dest_root = os.path.join(destination, base_name)
+            os.makedirs(dest_root, exist_ok=True)
+            base = os.path.abspath(source)
+            for root, dirs, files in os.walk(source, topdown=True):
+                # Compute relative path from base to root for directory pruning
+                rel_dir = os.path.relpath(root, base)
+                # Prune excluded directories in-place
+                pruned = []
+                for d in list(dirs):
+                    rel_path = os.path.normpath(os.path.join(rel_dir, d))
+                    if excluded(rel_path):
+                        pruned.append(d)
+                if pruned:
+                    self.logger.info(f"Pruning excluded directories: {', '.join(pruned)} under {root}")
+                dirs[:] = [d for d in dirs if d not in pruned]
+
+                # Ensure destination directory exists
+                out_dir = os.path.join(dest_root, os.path.relpath(root, base))
+                os.makedirs(out_dir, exist_ok=True)
+
+                for f in files:
+                    rel_path = os.path.normpath(os.path.join(rel_dir, f))
+                    if excluded(rel_path):
+                        continue
+                    src_path = os.path.join(root, f)
+                    dst_path = os.path.join(out_dir, f)
+                    try:
+                        shutil.copy2(src_path, dst_path)
+                    except PermissionError as pe:
+                        self.logger.warning(f"Permission denied copying: {src_path}: {pe}. Skipping.")
+                        continue
+                    except FileNotFoundError:
+                        # File disappeared during scan; skip
+                        continue
+                    except Exception as e:
+                        # Log and continue (best-effort)
+                        self.logger.warning(f"Failed to copy {src_path}: {e}. Skipping.")
 
     def _incremental_backup(self, source: str, destination: str, previous_manifest: Optional[Dict] = None) -> None:
         """Perform an incremental backup by comparing current filesystem to previous manifest.
@@ -395,10 +447,30 @@ class BackupManager:
             self.logger.warning("No previous manifest found; performing full backup instead")
             return self._full_backup(source, destination)
 
+        # Resolve excludes from config/task if present on self.config under last_task
+        task = (self.config or {}).get('last_task') or {}
+        excludes = self._build_excludes(task)
+        def excluded(rel: str) -> bool:
+            return self._path_is_excluded(rel, excludes)
+
         # Build a quick lookup from previous manifest
+        # Normalize previous paths to be relative to the source root, not including
+        # the top-level basename that a full backup might have introduced.
         prev_index = {}
+        base_name = os.path.basename(os.path.abspath(source)) or ''
+        # Prepare both slash variants for robust matching
+        bn_fwd = base_name
+        bn_back = base_name
         for f in previous_manifest.get('files', []):
-            prev_index[f.get('path')] = {
+            p = f.get('path') or ''
+            norm = p.lstrip('.\\/')
+            # Strip leading base_name/ if present (both slash styles)
+            if base_name:
+                if norm.startswith(base_name + '/'):
+                    norm = norm[len(base_name) + 1:]
+                elif norm.startswith(base_name + '\\'):
+                    norm = norm[len(base_name) + 1:]
+            prev_index[norm] = {
                 'size': f.get('size'),
                 'modified': f.get('modified'),
                 'checksum': f.get('checksum')
@@ -408,25 +480,101 @@ class BackupManager:
         if os.path.isfile(source):
             rel_path = os.path.basename(source)
             prev = prev_index.get(rel_path)
-            current_checksum = self._calculate_checksum(source)
+            try:
+                current_checksum = self._calculate_checksum(source)
+            except PermissionError as pe:
+                self.logger.warning(f"Permission denied reading file: {source}: {pe}. Skipping.")
+                return
             if (prev is None) or (current_checksum != prev.get('checksum')):
                 os.makedirs(destination, exist_ok=True)
-                shutil.copy2(source, os.path.join(destination, rel_path))
+                try:
+                    shutil.copy2(source, os.path.join(destination, rel_path))
+                except PermissionError as pe:
+                    self.logger.warning(f"Permission denied copying file: {source}: {pe}. Skipping.")
+                except Exception as e:
+                    self.logger.warning(f"Failed to copy file {source}: {e}. Skipping.")
         else:
             base = os.path.abspath(source)
-            for root, _, files in os.walk(source):
+            for root, dirs, files in os.walk(source, topdown=True):
+                # Prune excluded directories
+                rel_dir = os.path.relpath(root, base)
+                pruned = []
+                for d in list(dirs):
+                    rel_p = os.path.normpath(os.path.join(rel_dir, d))
+                    if excluded(rel_p):
+                        pruned.append(d)
+                if pruned:
+                    self.logger.info(f"Pruning excluded directories: {', '.join(pruned)} under {root}")
+                dirs[:] = [d for d in dirs if d not in pruned]
                 for file in files:
                     file_path = os.path.join(root, file)
                     rel_path = os.path.relpath(file_path, base)
+                    if excluded(rel_path):
+                        continue
                     try:
                         current_checksum = self._calculate_checksum(file_path)
                     except FileNotFoundError:
+                        continue
+                    except PermissionError as pe:
+                        self.logger.warning(f"Permission denied reading: {file_path}: {pe}. Skipping.")
                         continue
                     prev = prev_index.get(rel_path)
                     if (prev is None) or (current_checksum != prev.get('checksum')):
                         dest_path = os.path.join(destination, rel_path)
                         os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-                        shutil.copy2(file_path, dest_path)
+                        try:
+                            shutil.copy2(file_path, dest_path)
+                        except PermissionError as pe:
+                            self.logger.warning(f"Permission denied copying: {file_path}: {pe}. Skipping.")
+                            continue
+                        except FileNotFoundError:
+                            continue
+                        except Exception as e:
+                            self.logger.warning(f"Failed to copy {file_path}: {e}. Skipping.")
+
+    # ------------------- Excludes helpers -------------------
+    def _build_excludes(self, task: Dict) -> List[str]:
+        """Build a list of exclude patterns from task.options.excludes with Windows-safe defaults.
+
+        Patterns are matched against paths relative to the source root, using fnmatch.
+        Accept both POSIX and Windows separators.
+        """
+        options = (task or {}).get('options') or {}
+        excludes: List[str] = list(options.get('excludes') or [])
+        # Add some safe Windows defaults to avoid common Access Denied locations
+        if sys.platform.startswith('win'):
+            defaults = [
+                '**/System Volume Information/**',
+                '**/$Recycle.Bin/**',
+                '**/Windows/**',
+                '**/ProgramData/Microsoft/Windows Defender/**',
+                '**/AppData/Local/Packages/**',
+            ]
+            # Only append defaults that are not already present
+            for p in defaults:
+                if p not in excludes:
+                    excludes.append(p)
+        return excludes
+
+    def _path_is_excluded(self, rel_path: str, patterns: List[str]) -> bool:
+        """Return True if rel_path matches any of the given glob patterns.
+
+        We check using both forward- and back-slash variants to be robust on Windows.
+        """
+        if not patterns:
+            return False
+        norm = rel_path.strip('.\\/')
+        alt = norm.replace(os.sep, '/' if os.sep == '\\' else '\\')
+        for pat in patterns:
+            # normalize pattern to use forward slashes for matching, and also try raw
+            p1 = pat.replace('\\', '/')
+            if fnmatch.fnmatch(norm.replace('\\', '/'), p1):
+                return True
+            if fnmatch.fnmatch(norm, pat):
+                return True
+            if fnmatch.fnmatch(alt, p1) or fnmatch.fnmatch(alt, pat):
+                return True
+        return False
 
     def _create_manifest(self, backup_dir: str, task: Dict) -> Dict:
         """Create a manifest file for the backup"""

@@ -138,6 +138,12 @@ class TaskProcessor:
         self.logger.info(f"Starting backup task: {task.get('name', 'Unnamed backup')}")
         
         # Perform the backup
+        # Make current task available to the backup manager for context (e.g., excludes)
+        try:
+            if isinstance(self.backup_manager.config, dict):
+                self.backup_manager.config['last_task'] = task
+        except Exception:
+            pass
         result = self.backup_manager.create_backup(task)
         
         # If backup was successful, verify it
@@ -183,14 +189,28 @@ class TaskProcessor:
         opts = task.get('options') or {}
         remote = (opts.get('remote') or {})
         file_info = (opts.get('file') or {})
-        directory = (file_info.get('directory') or '').rstrip('/')
+        # Normalize directory to POSIX separators for SFTP
+        directory = (file_info.get('directory') or '').replace('\\', '/').rstrip('/')
         filename = file_info.get('filename') or ''
         if not (remote.get('host') and remote.get('user')):
             return {'status': 'failed', 'error': 'Missing remote host/user config'}
         host = remote.get('host')
         username = remote.get('user')
         password = remote.get('pass')
-        remote_path = directory + ('/' if directory and not directory.endswith('/') else '') + filename if filename else directory
+        # Build candidate paths: prefer explicit directory+filename, fallback to remote['path']+filename
+        candidate_paths = []
+        if filename:
+            if directory:
+                candidate_paths.append(directory + ('/' if not directory.endswith('/') else '') + filename)
+            rp = (remote.get('path') or '').replace('\\', '/').rstrip('/')
+            if rp:
+                candidate_paths.append(rp + '/' + filename)
+        else:
+            if directory:
+                candidate_paths.append(directory)
+        # Ensure at least one candidate
+        if not candidate_paths:
+            candidate_paths.append(directory)
         try:
             transport = paramiko.Transport((host, 22))
             if password:
@@ -206,18 +226,27 @@ class TaskProcessor:
                     return {'status': 'failed', 'error': 'No password provided and no SSH key found'}
                 transport.connect(username=username, pkey=pkey)
             sftp = paramiko.SFTPClient.from_transport(transport)
+            exists = False
+            checked_path = candidate_paths[0]
             try:
-                try:
-                    sftp.stat(remote_path)
-                    exists = True
-                except IOError:
-                    exists = False
+                # Try candidates in order
+                for p in candidate_paths:
+                    self.logger.info(f"Checking remote path via SFTP: {p}")
+                    try:
+                        sftp.stat(p)
+                        exists = True
+                        checked_path = p
+                        break
+                    except IOError:
+                        exists = False
+                        checked_path = p
+                        continue
             finally:
                 sftp.close()
-            transport.close()
-            details = {'phase': 'completed', 'exists': bool(exists), 'path': remote_path}
+                transport.close()
+            details = {'phase': 'completed', 'exists': bool(exists), 'path': checked_path}
             self._update_task_status(task['id'], 'completed', {'details': details})
-            return {'status': 'completed', 'exists': bool(exists), 'path': remote_path}
+            return {'status': 'completed', 'exists': bool(exists), 'path': checked_path}
         except Exception as e:
             self._update_task_status(task['id'], 'failed', {'error': str(e)})
             return {'status': 'failed', 'error': str(e)}

@@ -99,8 +99,10 @@ Route::middleware('auth')->group(function () {
             return view('settings.backup-configuration');
         })->name('backup-configuration');
 
-       
-        
+        // Registered Agents (for logged-in user)
+        Route::get('/agents', [\App\Http\Controllers\UserAgentController::class, 'index'])->name('agents.index');
+        Route::delete('/agents/{id}', [\App\Http\Controllers\UserAgentController::class, 'destroy'])->name('agents.destroy');
+
     });
 
     Route::get('/login-logs', [\App\Http\Controllers\LoginLogController::class, 'index'])->name('login-logs.index');

@@ -95,10 +95,12 @@ class RunScheduledBackups extends Command
                     continue;
                 }
 
-                // Find an available agent
-                $agent = \App\Models\Agent::where('status', 'online')->first();
+                // Find an available agent for the schedule's owner
+                $agent = \App\Models\Agent::where('status', 'online')
+                    ->where('user_id', $schedule->user_id)
+                    ->first();
                 if (!$agent) {
-                    $this->error('No available agents at the moment. Skipping job creation.');
+                    $this->error('No available agents for user #'.$schedule->user_id.' at the moment. Skipping job creation.');
                     continue;
                 }
 
@@ -136,7 +138,7 @@ class RunScheduledBackups extends Command
                 // Create backup job for agent
                 $job = \App\Models\BackupJob::create([
                     'agent_id' => $agent->id,
-                    'user_id' => null,
+                    'user_id' => $schedule->user_id,
                     'name' => 'Scheduled Backup - ' . basename($src) . ' - ' . $now->format('Y-m-d H:i:s'),
                     'source_path' => $src,
                     'destination_path' => $destination,

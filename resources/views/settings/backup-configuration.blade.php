@@ -7,7 +7,7 @@
     @endphp
     <div class="space-y-6">
         <div>
-            <h2 class="text-lg font-medium text-gray-900">Security Configuration</h2>
+            <h2 class="text-lg font-medium text-gray-900">Backup Configuration</h2>
             <p class="mt-1 text-sm text-gray-600">Configure advanced security settings for your application.</p>
         </div>
 
@@ -112,6 +112,36 @@
             </form>
         </div>
 
+        <!-- Registered Agents Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Registered Agents</h2>
+            <p class="text-sm text-gray-600 mb-4">These are the backup agents registered to your account.</p>
+
+            <div id="agents-container" class="space-y-3">
+                <div id="agents-empty" class="hidden p-4 bg-gray-50 border border-gray-200 rounded-lg text-gray-700">
+                    No agents registered yet.
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hostname</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OS</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Version</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Seen</th>
+                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="agents-list" class="bg-white divide-y divide-gray-200">
+                            <!-- Agents will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <!-- Backup Configuration Section -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-6 mt-10">
             <h2 class="text-xl font-semibold text-gray-800 mb-4">Backup Configuration</h2>
@@ -191,6 +221,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load encryption configuration
     loadEncryptionConfig();
     loadKeyStatus();
+    loadAgents();
 
     // Notification system
     function showNotification(message, type = 'success', duration = 5000) {
@@ -251,6 +282,83 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // ===================== Agents UI =====================
+    function loadAgents() {
+        fetch('{{ route("settings.agents.index") }}')
+            .then(res => res.json())
+            .then(data => {
+                if (!data.success) throw new Error('Failed to load agents');
+                const list = document.getElementById('agents-list');
+                const empty = document.getElementById('agents-empty');
+                list.innerHTML = '';
+                if (!data.agents || data.agents.length === 0) {
+                    empty.classList.remove('hidden');
+                    return;
+                }
+                empty.classList.add('hidden');
+                data.agents.forEach(agent => {
+                    const tr = document.createElement('tr');
+                    const lastSeen = agent.last_seen_at ? new Date(agent.last_seen_at).toLocaleString() : '—';
+                    const statusBadge = agent.status === 'online'
+                        ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Online</span>'
+                        : '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">Offline</span>';
+                    tr.innerHTML = `
+                        <td class="px-4 py-2 text-sm text-gray-900">${escapeHtml(agent.name || '')}</td>
+                        <td class="px-4 py-2 text-sm text-gray-900">${escapeHtml(agent.hostname || '')}</td>
+                        <td class="px-4 py-2 text-sm text-gray-900">${escapeHtml(agent.os || '')}</td>
+                        <td class="px-4 py-2 text-sm text-gray-900">${escapeHtml(agent.version || '')}</td>
+                        <td class="px-4 py-2 text-sm">${statusBadge}</td>
+                        <td class="px-4 py-2 text-sm text-gray-900">${lastSeen}</td>
+                        <td class="px-4 py-2 text-right">
+                            <button data-id="${agent.id}" class="delete-agent inline-flex items-center px-3 py-1 text-xs bg-red-100 text-red-700 rounded-md hover:bg-red-200">Delete</button>
+                        </td>`;
+                    list.appendChild(tr);
+                });
+                // Wire delete buttons
+                list.querySelectorAll('.delete-agent').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const id = btn.getAttribute('data-id');
+                        confirmDeleteAgent(id);
+                    });
+                });
+            })
+            .catch(err => {
+                console.error(err);
+                showNotification('Failed to load agents', 'error');
+            });
+    }
+
+    function confirmDeleteAgent(id) {
+        if (!id) return;
+        if (!confirm('Are you sure you want to delete this agent? This will revoke its access.')) return;
+        deleteAgent(id);
+    }
+
+    function deleteAgent(id) {
+        const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        // Pre-generate the destroy URL from blade and replace placeholder
+        const destroyTemplate = '{{ route("settings.agents.destroy", ["id" => "__ID__"]) }}';
+        const url = destroyTemplate.replace('__ID__', encodeURIComponent(id));
+        fetch(url, {
+            method: 'DELETE',
+            headers: { 'X-CSRF-TOKEN': csrf }
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) throw new Error('Delete failed');
+            showNotification('Agent deleted successfully', 'success');
+            loadAgents();
+        })
+        .catch(err => {
+            console.error(err);
+            showNotification('Failed to delete agent', 'error');
+        });
+    }
+
+    function escapeHtml(str) {
+        return String(str).replace(/[&<>"]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s]));
+    }
+
     window.dismissNotification = function(notificationId) {
         const notification = document.getElementById(notificationId);
         if (notification) {
@@ -268,7 +376,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Load current config
     fetch('/backup/config')
-        .then(res => res.json())
+        .then(res => {
+            if (!res.ok) throw new Error('Failed to load backup config');
+            return res.json();
+        })
         .then(cfg => {
             const storageLocation = cfg.storage_location || 'local';
             
@@ -321,7 +432,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Encryption configuration functions
     function loadEncryptionConfig() {
         fetch('{{ route("encryption.config.get") }}')
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) throw new Error('Encryption config endpoint returned ' + res.status);
+                return res.json();
+            })
             .then(config => {
                 document.getElementById('encryption_type').value = config.encryption_type || 'aes-256-cbc';
                 document.getElementById('key_rotation_frequency').value = config.key_rotation_frequency || '30_days';
@@ -331,11 +445,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function loadKeyStatus() {
         fetch('{{ route("encryption.key-status") }}')
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) throw new Error('Encryption key status endpoint returned ' + res.status);
+                return res.json();
+            })
             .then(data => {
                 const currentKeyInfo = document.getElementById('current-key-info');
                 const keyVersionSelect = document.getElementById('key-version-select');
-                const status = data.status;
+                const status = (data && data.status) ? data.status : null;
+                if (!status || !status.current_key) {
+                    currentKeyInfo.textContent = 'No key information available';
+                    return;
+                }
                 
                 let statusText = `Version: ${status.current_key.version.toUpperCase()}, `;
                 statusText += `Cipher: ${status.current_key.cipher}, `;
@@ -382,7 +503,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     showRotationAlert();
                 }
             })
-            .catch(err => console.error('Failed to load key status:', err));
+            .catch(err => {
+                console.error('Failed to load key status:', err);
+            });
     }
 
     function showRotationAlert() {
@@ -610,9 +733,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const title = autoAdded ? 'New Encryption Key Added to .env' : 'New Encryption Key Generated';
         
-        // Add activate button if key was auto-added
+        // Add activate button if key was auto-added (no inline handlers to avoid quoting issues)
         const activateButton = autoAdded ? `
-            <button type="button" onclick="activateKey('${version}')" class="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 ml-2">
+            <button type="button" class="activate-key-btn px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 ml-2" data-version="${String(version)}">
                 Activate Key
             </button>
         ` : '';
@@ -634,7 +757,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         ${instructionsList}
                     </div>
                     <div class="mt-3">
-                        <button type="button" onclick="copyToClipboard('${key}')" class="px-3 py-1 text-xs ${buttonColor} rounded-md">
+                        <button type="button" class="copy-key-btn px-3 py-1 text-xs ${buttonColor} rounded-md" data-key="${String(key)}">
                             Copy Key
                         </button>
                         ${activateButton}
@@ -643,6 +766,21 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         `;
         newKeyDisplay.classList.remove('hidden');
+        // Wire click handlers after rendering
+        const copyBtn = newKeyDisplay.querySelector('.copy-key-btn');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', function() {
+                const k = this.getAttribute('data-key') || '';
+                window.copyToClipboard(k);
+            });
+        }
+        const actBtn = newKeyDisplay.querySelector('.activate-key-btn');
+        if (actBtn) {
+            actBtn.addEventListener('click', function() {
+                const v = this.getAttribute('data-version') || '';
+                window.activateKey(v);
+            });
+        }
     }
 
     // Function to activate a key

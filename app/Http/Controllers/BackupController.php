@@ -17,6 +17,7 @@ use App\Models\BackupHistory;
 use App\Models\BackupConfiguration;
 use App\Models\BackupSchedule;
 use App\Services\LinuxBackupService;
+use App\Models\Agent;
 
 class BackupController extends Controller
 {
@@ -141,11 +142,13 @@ class BackupController extends Controller
         $source = BackupSourceDirectory::where('path', $validated['source_directory'])->first();
         $destination = BackupDestinationDirectory::where('path', $validated['destination_directory'])->first();
         
-        // Find an available agent
-        $agent = Agent::where('status', 'online')->first();
+        // Find an available agent for the authenticated user
+        $agent = Agent::where('status', 'online')
+            ->where('user_id', auth()->id())
+            ->first();
         
         if (!$agent) {
-            return back()->withErrors(['backup' => 'No available agents to process this backup.']);
+            return back()->withErrors(['backup' => 'No available agents registered to your account are online. Please register an agent or bring it online.']);
         }
         
         // Create a new backup job
@@ -610,10 +613,12 @@ class BackupController extends Controller
         ]);
 
         $history = BackupHistory::findOrFail($request->backup_id);
-        // Find an available agent
-        $agent = \App\Models\Agent::where('status', 'online')->first();
+        // Find an available agent for the authenticated user
+        $agent = Agent::where('status', 'online')
+            ->where('user_id', auth()->id())
+            ->first();
         if (!$agent) {
-            return response()->json(['success' => false, 'message' => 'No online agents available'], 422);
+            return response()->json(['success' => false, 'message' => 'No online agents registered to your account'], 422);
         }
 
         // Encryption config from env (versioned keys)

@@ -43,13 +43,15 @@ class BackupRequestController extends Controller
         $source = BackupSourceDirectory::findOrFail($request->source_id);
         $destination = BackupDestinationDirectory::findOrFail($request->destination_id);
 
-        // Find an available agent (in a real app, you'd have agent selection logic)
-        $agent = Agent::where('status', 'online')->first();
+        // Find an available agent belonging to this user
+        $agent = Agent::where('status', 'online')
+            ->where('user_id', $user->id)
+            ->first();
         
         if (!$agent) {
             return response()->json([
                 'success' => false,
-                'message' => 'No available agents to process this backup'
+                'message' => 'No online agents registered to your account'
             ], 503);
         }
 

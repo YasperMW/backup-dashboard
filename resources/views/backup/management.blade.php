@@ -128,6 +128,7 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Destination Directory</label>
                         <select name="destination_directory" required class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="" disabled selected hidden>Select a destination directory</option>
                             @foreach($destinationDirectories as $dir)
                                 <option value="{{ $dir }}">{{ $dir }}</option>
                             @endforeach
@@ -174,7 +175,7 @@
                 @foreach(App\Models\BackupSourceDirectory::all() as $dir)
                     <li class="flex items-center justify-between py-1">
                         <span>{{ $dir->path }}</span>
-                        <form method="POST" action="{{ route('backup.deleteSourceDirectory', $dir->id) }}" onsubmit="return confirm('Are you sure you want to remove this directory?');">
+                        <form method="POST" action="{{ route('backup.deleteSourceDirectory', $dir->id) }}">
                             @csrf
                             @method('DELETE')
                             <button type="submit" class="text-red-500 hover:text-red-700 ml-2">Delete</button>
@@ -196,7 +197,7 @@
                     @foreach(App\Models\BackupDestinationDirectory::all() as $dir)
                         <li class="flex items-center justify-between py-1">
                             <span>{{ $dir->path }}</span>
-                            <form method="POST" action="{{ route('backup.deleteDestinationDirectory', $dir->id) }}" onsubmit="return confirm('Are you sure you want to remove this destination directory?');">
+                            <form method="POST" action="{{ route('backup.deleteDestinationDirectory', $dir->id) }}">
                                 @csrf
                                 @method('DELETE')
                                 <button type="submit" class="text-red-500 hover:text-red-700 ml-2">Delete</button>
@@ -258,6 +259,7 @@
                 <div class="mb-4" id="manual-destination-group">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Select Destination Directory</label>
                     <select name="destination_directory" id="manual-destination-select" required class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <option value="" disabled selected hidden>Select a destination directory</option>
                         @foreach($destinationDirectories as $dir)
                             <option value="{{ $dir }}">{{ $dir }}</option>
                         @endforeach
@@ -308,6 +310,40 @@
         </div>
     </div>
  @endsection
+<!-- Custom Delete Confirmation Modal -->
+<div id="delete-confirm-modal" class="fixed inset-0 z-50 hidden" aria-hidden="true">
+    <div class="absolute inset-0 bg-black/40"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+        <div class="w-full max-w-md bg-white rounded-lg shadow-lg overflow-hidden">
+            <div class="px-6 py-4">
+                <div class="flex items-start">
+                    <div class="mx-auto shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-red-100 sm:mx-0 sm:w-10 sm:h-10">
+                        <svg class="w-6 h-6 text-red-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                        </svg>
+                    </div>
+                    <div class="ms-4 text-start">
+                        <h3 class="text-lg font-medium text-gray-900" id="delete-modal-title">Confirm Deletion</h3>
+                        <div class="mt-2 text-sm text-gray-600" id="delete-modal-message">Are you sure you want to delete this item?</div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex flex-row justify-end gap-2 px-6 py-4 bg-gray-100">
+                <button id="delete-modal-cancel" type="button" class="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button id="delete-modal-confirm" type="button" class="px-4 py-2 text-sm rounded-md bg-red-600 text-white hover:bg-red-700">Delete</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Focus trap sentinel -->
+    <button class="sr-only" aria-hidden="true">close</button>
+    
+    <style>
+        /* simple focus lock for keyboard users */
+        #delete-confirm-modal:focus-within { outline: none; }
+    </style>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const isSystemOffline = {{ $isSystemOffline ? 'true' : 'false' }};
@@ -491,38 +527,93 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // AJAX for Delete Source Directory
-    document.querySelectorAll('form[action*="backup.deleteSourceDirectory"]').forEach(function(delForm) {
-        delForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            if (!confirm('Are you sure you want to remove this directory?')) return;
-            const btn = delForm.querySelector('button[type="submit"]');
-            btn.disabled = true;
-            const formData = new FormData(delForm);
-            fetch(delForm.action, {
-                method: 'POST',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': delForm.querySelector('input[name="_token"]').value
-                },
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                btn.disabled = false;
-                if (data.success) {
+    // Custom modal helpers
+    const modal = document.getElementById('delete-confirm-modal');
+    const modalMsg = document.getElementById('delete-modal-message');
+    const modalTitle = document.getElementById('delete-modal-title');
+    const modalCancel = document.getElementById('delete-modal-cancel');
+    const modalConfirm = document.getElementById('delete-modal-confirm');
+    let pendingDeleteForm = null;
+    let pendingDeleteType = '';
+
+    function openDeleteModal(message, title) {
+        modalMsg.textContent = message || 'Are you sure you want to delete this item?';
+        modalTitle.textContent = title || 'Confirm Deletion';
+        modal.classList.remove('hidden');
+        // basic focus move
+        modalConfirm.focus();
+    }
+    function closeDeleteModal() {
+        modal.classList.add('hidden');
+        pendingDeleteForm = null;
+        pendingDeleteType = '';
+    }
+    modalCancel.addEventListener('click', closeDeleteModal);
+
+    function performDelete(form) {
+        const btn = form.querySelector('button[type="submit"]');
+        if (btn) btn.disabled = true;
+        const formData = new FormData(form);
+        fetch(form.action, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': (form.querySelector('input[name="_token"]').value)
+            },
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (btn) btn.disabled = false;
+            if (data.success) {
+                if (pendingDeleteType === 'source') {
                     showToast('Directory removed successfully!', 'success');
-                    refreshSourceDirectoryList();
+                    if (typeof refreshSourceDirectoryList === 'function') {
+                        refreshSourceDirectoryList();
+                    }
+                } else if (pendingDeleteType === 'destination') {
+                    showToast('Destination removed successfully!', 'success');
+                    if (typeof refreshDestinationDirectoryList === 'function') {
+                        refreshDestinationDirectoryList();
+                    }
                 } else {
-                    showToast(data.message || 'Failed to remove directory.', 'error');
+                    showToast('Deleted successfully!', 'success');
                 }
-            })
-            .catch(() => {
-                btn.disabled = false;
-                showToast('Failed to remove directory.', 'error');
-            });
-        });
+            } else {
+                showToast(data.message || 'Failed to delete.', 'error');
+            }
+        })
+        .catch(() => {
+            if (btn) btn.disabled = false;
+            showToast('Failed to delete.', 'error');
+        })
+        .finally(() => closeDeleteModal());
+    }
+
+    modalConfirm.addEventListener('click', function() {
+        if (pendingDeleteForm) {
+            performDelete(pendingDeleteForm);
+        } else {
+            closeDeleteModal();
+        }
     });
+
+    // Intercept deletes and open modal
+    document.addEventListener('submit', function(e) {
+        const form = e.target;
+        if (form && form.matches('form[action*="/backup/source-directory/"]')) {
+            e.preventDefault();
+            pendingDeleteForm = form;
+            pendingDeleteType = 'source';
+            openDeleteModal('Are you sure you want to remove this directory?', 'Remove Source Directory');
+        }
+        if (form && form.matches('form[action*="/backup/destination-directory/"]')) {
+            e.preventDefault();
+            pendingDeleteForm = form;
+            pendingDeleteType = 'destination';
+            openDeleteModal('Are you sure you want to remove this destination directory?', 'Remove Destination Directory');
+        }
+    }, true);
 
     // AJAX for Add Destination Directory
     document.querySelectorAll('form[action$="backup.addDestinationDirectory"]').forEach(function(addForm) {
@@ -562,38 +653,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // AJAX for Delete Destination Directory
-    document.querySelectorAll('form[action*="backup.deleteDestinationDirectory"]').forEach(function(delForm) {
-        delForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            if (!confirm('Are you sure you want to remove this destination directory?')) return;
-            const btn = delForm.querySelector('button[type="submit"]');
-            btn.disabled = true;
-            const formData = new FormData(delForm);
-            fetch(delForm.action, {
-                method: 'POST',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': delForm.querySelector('input[name="_token"]').value
-                },
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                btn.disabled = false;
-                if (data.success) {
-                    showToast('Destination removed successfully!', 'success');
-                    refreshDestinationDirectoryList();
-                } else {
-                    showToast(data.message || 'Failed to remove destination.', 'error');
-                }
-            })
-            .catch(() => {
-                btn.disabled = false;
-                showToast('Failed to remove destination.', 'error');
-            });
-        });
-    });
+    // (Destination deletion is handled by the same modal interception above)
 
     // AJAX for Schedule Creation
     const scheduleForm = document.getElementById('schedule-create-form');

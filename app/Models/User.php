@@ -137,4 +137,21 @@ class User extends Authenticatable implements MustVerifyEmail
         $this->save();
         return $codes;
     }
+
+    /**
+     * Relationship: a user may have many agents (devices) registered.
+     */
+    public function agents()
+    {
+        return $this->hasMany(Agent::class);
+    }
+
+    /**
+     * Convenience: primary/first agent for this user.
+     * If you enforce one agent per user, prefer this relation.
+     */
+    public function agent()
+    {
+        return $this->hasOne(Agent::class);
+    }
 }

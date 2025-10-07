@@ -65,7 +65,7 @@
                                 $destDirNorm = rtrim(str_replace('\\', '/', $history->destination_directory ?? ''), '/');
                                 $isRemote = ($history->destination_type === 'remote') || ($remotePathNorm && $destDirNorm === $remotePathNorm);
                             @endphp
-                            <tr class="{{ $i >= $showLimit ? 'hidden-row' : '' }}">
+                            <tr class="{{ $i >= $showLimit ? 'hidden-row' : '' }}" data-history-id="{{ $history->id }}" data-is-remote="{{ $isRemote ? '1' : '0' }}">
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <input type="radio" name="backup_id" value="{{ $history->id }}" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300">
                                 </td>
@@ -128,9 +128,9 @@
                         <button id="browse-restore-path" type="button" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
                             Browse
                         </button>
-                        <input id="restore-path-picker" type="file" style="display:none" webkitdirectory directory />
+                        <input id="restore-path-picker" type="file" class="hidden" webkitdirectory directory />
                     </div>
-                    <p class="mt-1 text-sm text-gray-500">For Docker: Use container paths like /tmp/restore_out. See Docker section below for host file copying.</p>
+                    <p class="mt-1 text-xs text-gray-500">Browser security limits reading full local paths. If needed, enter the exact agent/container path manually (e.g., <code>/tmp/restore_out</code>).</p>
                 </div>
                 <!-- Restore Options -->
                 <div>
@@ -154,6 +154,9 @@
 
         <!-- Action Buttons -->
         <div class="flex justify-end space-x-4 mt-4">
+            <button id="verify-on-agent-btn" class="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                Verify on Agent
+            </button>
             <button id="verify-integrity-btn" class="px-6 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
                 Verify Integrity
             </button>
@@ -194,11 +197,13 @@
             tbody.innerHTML = '';
             let hasMore = backups.length > showLimit;
             backups.forEach((b, i) => {
-                const destDirNorm = b.destination_directory ? b.destination_directory.replace(/\\/g, '/').replace(/\/+$/, '') : '';
+                const destDirNorm = b.destination_directory ? b.destination_directory.replace(/\\/g, '/').replace(/\/+$|\/$/g, '') : '';
                 const isRemote = b.is_remote !== undefined ? b.is_remote : (b.destination_type === 'remote' || (remotePathNorm && destDirNorm === remotePathNorm));
                 
                 const tr = document.createElement('tr');
                 tr.className = i >= showLimit ? 'hidden-row' : '';
+                tr.setAttribute('data-history-id', String(b.id));
+                tr.setAttribute('data-is-remote', isRemote ? '1' : '0');
                 
                 tr.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap">
@@ -333,6 +338,46 @@
             } catch { return false; }
         }
 
+        // Restore path browse handling
+        (function() {
+            const pathInput = document.getElementById('restore-path-input');
+            const browseBtn = document.getElementById('browse-restore-path');
+            const picker = document.getElementById('restore-path-picker');
+
+            function setFromFiles(fileList) {
+                if (!fileList || fileList.length === 0) return;
+                // Take the top-level directory name from webkitRelativePath
+                const first = fileList[0];
+                const rel = first.webkitRelativePath || '';
+                const top = rel ? rel.split('/')[0] : '';
+                if (top) {
+                    // Set a path-like value; user can edit to an absolute agent path
+                    pathInput.value = '/' + top;
+                }
+            }
+
+            if (browseBtn && pathInput && picker) {
+                browseBtn.addEventListener('click', async function() {
+                    // Try the modern directory picker if available
+                    if (window.showDirectoryPicker) {
+                        try {
+                            const handle = await window.showDirectoryPicker();
+                            if (handle && handle.name) {
+                                // We only get the directory name, not an absolute path
+                                pathInput.value = '/' + handle.name;
+                            }
+                        } catch (e) { /* user cancelled or not allowed */ }
+                    } else {
+                        // Fallback to hidden input with webkitdirectory
+                        picker.click();
+                    }
+                });
+                picker.addEventListener('change', function() {
+                    setFromFiles(picker.files);
+                });
+            }
+        })();
+
         document.getElementById('start-restore-btn').addEventListener('click', async function() {
             const selected = document.querySelector('input[name="backup_id"]:checked');
             const restorePath = document.querySelector('input[placeholder="/path/to/restore"]').value;
@@ -351,6 +396,104 @@
             if (!online) {
                 this.disabled = false;
                 showToast('No online agents found. Please start the agent and try again.', 'error');
+                return;
+            }
+            // Pre-verify on agent before starting restore
+            const row = selected.closest('tr');
+            const historyId = row ? row.getAttribute('data-history-id') : null;
+            const isRemote = row && row.getAttribute('data-is-remote') === '1';
+            if (!historyId) {
+                this.disabled = false;
+                showToast('Invalid selection.', 'error');
+                return;
+            }
+            let statusCell = row.querySelectorAll('td')[6] || row.querySelector('td:last-child');
+            const badge = statusCell ? statusCell.querySelector('span') : null;
+            const originalBadge = { className: badge ? badge.className : '', text: badge ? badge.textContent : '' };
+            if (badge) {
+                badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800';
+                badge.textContent = 'Queued';
+            }
+            const endpoint = isRemote ? `/backup/history/${historyId}/remote-file-check` : `/backup/history/${historyId}/file-check`;
+            try {
+                const qres = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    }
+                });
+                const qjson = await qres.json().catch(() => null);
+                if (!qjson || !qjson.success || !qjson.data || !qjson.data.job_id) {
+                    throw new Error((qjson && qjson.message) ? qjson.message : 'Queue failed');
+                }
+                if (badge) {
+                    badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800';
+                    badge.textContent = 'Checking...';
+                }
+                const pollMs = 1500; let attempts = 0; const maxAttempts = 40;
+                const verifyResult = await new Promise((resolve) => {
+                    const poll = () => {
+                        attempts++;
+                        fetch(`/backup/status/${qjson.data.job_id}`, { headers: { 'X-Requested-With': 'XMLHttpRequest' }})
+                            .then(r => r.json()).then(sj => {
+                                if (!sj.success) throw new Error('Status fetch failed');
+                                const d = sj.data || {};
+                                if (d.status === 'completed' || d.status === 'failed') {
+                                    const exists = d.progress && typeof d.progress.exists !== 'undefined' ? !!d.progress.exists : null;
+                                    resolve({ done: true, exists, status: d.status });
+                                } else if (attempts < maxAttempts) {
+                                    setTimeout(poll, pollMs);
+                                } else {
+                                    resolve({ done: false, exists: null, status: 'timeout' });
+                                }
+                            }).catch(() => {
+                                if (attempts < maxAttempts) setTimeout(poll, pollMs);
+                                else resolve({ done: false, exists: null, status: 'error' });
+                            });
+                    };
+                    poll();
+                });
+                if (verifyResult.exists === true) {
+                    if (badge) {
+                        badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800';
+                        badge.textContent = 'Exists';
+                    }
+                    // Proceed to restore
+                } else if (verifyResult.exists === false) {
+                    if (badge) {
+                        badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800';
+                        badge.textContent = 'Missing';
+                    }
+                    // Disable selection when missing
+                    const radio = row.querySelector('input[name="backup_id"]');
+                    if (radio) {
+                        const wasChecked = radio.checked;
+                        radio.checked = false;
+                        radio.disabled = true;
+                        radio.title = 'Backup not available on agent';
+                        if (wasChecked) {
+                            showToast('This backup is missing on the agent and cannot be restored.', 'error');
+                        }
+                    }
+                    this.disabled = false;
+                    return; // stop here, do not start restore
+                } else {
+                    // Unknown result
+                    if (badge) {
+                        badge.className = originalBadge.className || 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800';
+                        badge.textContent = originalBadge.text || 'Unknown';
+                    }
+                    this.disabled = false;
+                    showToast('Could not verify backup on agent. Please try again.', 'error');
+                    return;
+                }
+            } catch (e) {
+                if (badge) {
+                    badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800';
+                    badge.textContent = e && e.message ? e.message : 'Queue failed';
+                }
+                this.disabled = false;
                 return;
             }
             showRestoreProgressModal();
@@ -395,6 +538,113 @@
                 hideRestoreProgressModal();
                 this.disabled = false;
                 showToast('Restore failed.', 'error');
+            });
+        });
+        document.getElementById('verify-on-agent-btn').addEventListener('click', function() {
+            const selected = document.querySelector('input[name="backup_id"]:checked');
+            if (!selected) {
+                showToast('Please select a backup to verify on agent.', 'error');
+                return;
+            }
+            const row = selected.closest('tr');
+            const historyId = row ? row.getAttribute('data-history-id') : null;
+            const isRemote = row && row.getAttribute('data-is-remote') === '1';
+            if (!historyId) {
+                showToast('Invalid selection.', 'error');
+                return;
+            }
+            // Prefer explicit index 6, but fallback to last cell span
+            let statusCell = row.querySelectorAll('td')[6] || row.querySelector('td:last-child');
+            const badge = statusCell ? statusCell.querySelector('span') : null;
+            const original = { className: badge ? badge.className : '', text: badge ? badge.textContent : '' };
+            const button = this;
+            button.disabled = true;
+            const originalBtnText = button.textContent;
+            button.textContent = 'Queued...';
+            if (badge) {
+                badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800';
+                badge.textContent = 'Queued';
+            }
+            const endpoint = isRemote ? `/backup/history/${historyId}/remote-file-check` : `/backup/history/${historyId}/file-check`;
+            fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                }
+            }).then(async r => {
+                const json = await r.json().catch(() => null);
+                if (!json || !json.success || !json.data || !json.data.job_id) {
+                    throw new Error((json && json.message) ? json.message : 'Queue failed');
+                }
+                const jobId = json.data.job_id;
+                if (badge) {
+                    badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800';
+                    badge.textContent = 'Checking...';
+                }
+                button.textContent = 'Checking...';
+                const pollMs = 1500; let attempts = 0; const maxAttempts = 40;
+                const poll = () => {
+                    attempts++;
+                    fetch(`/backup/status/${jobId}`, { headers: { 'X-Requested-With': 'XMLHttpRequest' }})
+                        .then(r => r.json()).then(sj => {
+                            if (!sj.success) throw new Error('Status fetch failed');
+                            const d = sj.data || {};
+                            if (d.status === 'completed' || d.status === 'failed') {
+                                const exists = d.progress && typeof d.progress.exists !== 'undefined' ? !!d.progress.exists : null;
+                                const checkedPath = (d.progress && d.progress.path) ? d.progress.path : '';
+                                if (badge) {
+                                    if (exists === true) {
+                                        badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800';
+                                        badge.textContent = 'Exists';
+                                        if (checkedPath) badge.title = checkedPath;
+                                    } else if (exists === false) {
+                                        badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800';
+                                        badge.textContent = 'Missing';
+                                        if (checkedPath) badge.title = checkedPath;
+                                        // Disable selection when missing
+                                        const radio = row.querySelector('input[name="backup_id"]');
+                                        if (radio) {
+                                            const wasChecked = radio.checked;
+                                            radio.checked = false;
+                                            radio.disabled = true;
+                                            radio.title = 'Backup not available on agent';
+                                            if (wasChecked) {
+                                                showToast('This backup is missing on the agent and cannot be selected for restore.', 'error');
+                                            }
+                                        }
+                                    } else {
+                                        badge.className = d.status === 'completed'
+                                            ? 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800'
+                                            : 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800';
+                                        badge.textContent = d.status.charAt(0).toUpperCase() + d.status.slice(1);
+                                    }
+                                }
+                                button.disabled = false;
+                                button.textContent = originalBtnText;
+                            } else if (attempts < maxAttempts) {
+                                setTimeout(poll, pollMs);
+                            } else {
+                                if (badge) {
+                                    badge.className = original.className || 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800';
+                                    badge.textContent = original.text || 'Unknown';
+                                }
+                                button.disabled = false;
+                                button.textContent = originalBtnText;
+                            }
+                        }).catch(() => {
+                            if (attempts < maxAttempts) setTimeout(poll, pollMs);
+                            else { if (badge) { badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800'; badge.textContent = 'Error'; } button.disabled = false; button.textContent = originalBtnText; }
+                        });
+                };
+                poll();
+            }).catch(err => {
+                if (badge) {
+                    badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800';
+                    badge.textContent = err && err.message ? err.message : 'Failed';
+                }
+                button.disabled = false;
+                button.textContent = originalBtnText;
             });
         });
         document.getElementById('verify-integrity-btn').addEventListener('click', function() {
