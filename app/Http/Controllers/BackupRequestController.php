@@ -50,7 +50,11 @@ class BackupRequestController extends Controller
         }
         
         // Get or create destination directory
-        $destinationPath = $validated['destination_directory'] ?? storage_path('app/backups');
+        // Treat empty string as not provided so we can fall back to default when remote-only is selected
+        $destinationInput = $validated['destination_directory'] ?? null;
+        $destinationPath = $destinationInput !== null && $destinationInput !== ''
+            ? $destinationInput
+            : storage_path('app/backups');
         $destination = BackupDestinationDirectory::firstOrCreate(
             ['path' => $destinationPath],
             ['description' => 'Auto-created destination']

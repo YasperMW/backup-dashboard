@@ -693,7 +693,11 @@ class BackupManager:
             raise RuntimeError(f"OpenSSL decrypt error: {result.stderr.strip()}")
 
     def _download_remote(self, remote_file: str, local_target: str, remote_cfg: Dict[str, Any]) -> None:
-        """Download remote_file to local_target via SFTP."""
+        """Download remote_file to local_target via SFTP.
+
+        This method is tolerant of Windows-style backslashes and tries multiple candidate
+        remote paths, including combining the configured remote base path with the filename.
+        """
         if paramiko is None:
             raise RuntimeError("Paramiko is not installed. Please install with: pip install paramiko")
         host = remote_cfg.get('host')
@@ -701,6 +705,32 @@ class BackupManager:
         password = remote_cfg.get('pass')
         if not (host and username and remote_file and local_target):
             raise ValueError('Incomplete remote download parameters')
+        # Normalize input path to POSIX style for SFTP
+        rf = (remote_file or '').replace('\\', '/').replace('//', '/')
+        base = (remote_cfg.get('path') or '').replace('\\', '/').rstrip('/')
+        # Build candidates to try
+        candidates = []
+        if rf:
+            candidates.append(rf)
+            # Also try with a single leading slash variant
+            if not rf.startswith('/'):
+                candidates.append('/' + rf)
+        # Try base + filename
+        fname = os.path.basename(rf) if rf else ''
+        if base and fname:
+            candidates.append(base + '/' + fname)
+            # Ensure single slash after base
+            candidates.append((base + '/' + fname).replace('//', '/'))
+
+        # Deduplicate while preserving order
+        seen = set()
+        unique_candidates = []
+        for p in candidates:
+            p_norm = p.replace('//', '/')
+            if p_norm not in seen:
+                unique_candidates.append(p_norm)
+                seen.add(p_norm)
+
         transport = paramiko.Transport((host, 22))
         try:
             if password:
@@ -716,7 +746,20 @@ class BackupManager:
                 transport.connect(username=username, pkey=private_key)
             sftp = paramiko.SFTPClient.from_transport(transport)
             try:
-                sftp.get(remote_file, local_target)
+                # Probe candidates to find an existing remote path
+                selected = None
+                for p in unique_candidates:
+                    try:
+                        self.logger.info(f"SFTP stat candidate: {p}")
+                        sftp.stat(p)
+                        selected = p
+                        break
+                    except IOError:
+                        continue
+                if selected is None:
+                    raise FileNotFoundError(f"Remote file not found. Tried: {', '.join(unique_candidates)}")
+                self.logger.info(f"Downloading remote file via SFTP: {selected} -> {local_target}")
+                sftp.get(selected, local_target)
             finally:
                 sftp.close()
         finally:

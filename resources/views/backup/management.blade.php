@@ -25,6 +25,9 @@
                 {{ $errors->first('backup') }}
             </div>
         @endif
+
+        
+        
         @if (session('status'))
             <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
                 {{ session('status') }}
@@ -46,13 +49,13 @@
                     <label class="block text-sm font-medium text-gray-700 mb-2">Backup Type</label>
                     <input type="text" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-100" value="{{ $backupConfig->backup_type ?? 'full' }}" readonly>
                 </div>
-                <!-- Compression Level -->
-                <div>
+                <!-- Compression Level (hidden) -->
+                <div class="hidden">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Compression Level</label>
                     <input type="text" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-100" value="{{ $backupConfig->compression_level ?? 'none' }}" readonly>
                 </div>
-                <!-- Retention Period -->
-                <div>
+                <!-- Retention Period (hidden) -->
+                <div class="hidden">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Retention Period (days)</label>
                     <input type="number" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-100" value="{{ $backupConfig->retention_period ?? 30 }}" readonly>
                 </div>
@@ -108,11 +111,11 @@
                             @endforeach
                         </div>
                     </div>
-                    <div>
+                    <div class="hidden">
                         <label class="block text-sm font-medium text-gray-700 mb-2">Retention Days <span class="text-xs text-gray-400">(blank = global)</span></label>
                         <input type="number" name="retention_days" min="1" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="e.g. 30" />
                     </div>
-                    <div>
+                    <div class="hidden">
                         <label class="block text-sm font-medium text-gray-700 mb-2">Max Backups <span class="text-xs text-gray-400">(blank = global)</span></label>
                         <input type="number" name="max_backups" min="1" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="e.g. 10" />
                     </div>
@@ -238,7 +241,7 @@
                         <option value="differential">Differential Backup</option>
                     </select>
                 </div>
-                <div class="mb-4">
+                <div class="mb-4 hidden" id="manual-compression-container">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Compression Level</label>
                     <select name="compression_level" id="manual-compression-level" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                         <option value="none">None</option>
@@ -308,6 +311,63 @@
                 </div>
             </div>
         </div>
+
+        <!-- User Guide (moved to bottom) -->
+        <div class="mt-6 bg-blue-50 border border-blue-200 rounded-md p-4">
+            <h3 class="text-sm font-semibold text-blue-800 mb-2">How to use Backup Management</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-blue-900">
+                <div>
+                    <p class="font-semibold mb-1">Backup Configuration</p>
+                    <ul class="list-disc list-inside space-y-1">
+                        <li><strong>What it shows:</strong> The global backup settings currently in effect.</li>
+                        <li><strong>Edit:</strong> Use <em>Edit in Settings</em> to change storage location and type, these apply for scheduled backups.</li>
+                    </ul>
+                    <p class="font-semibold mt-3 mb-1">Backup Schedule</p>
+                    <ul class="list-disc list-inside space-y-1">
+                        <li><strong>Create Schedule:</strong> Choose frequency, time, sources, and destination, then click <em>Create Schedule</em>.</li>
+                        <li><strong>When it runs:</strong> At the scheduled time, a job is queued for your online agent.</li>
+                        <li><strong>Results:</strong> Success creates a new entry in Backup History; failures are listed with an error.</li>
+                        <li><strong>Offline note:</strong> If the system is offline, remote destinations are skipped until it’s online.</li>
+                    </ul>
+                </div>
+                <div>
+                    <p class="font-semibold mb-1">Manual Backup</p>
+                    <ul class="list-disc list-inside space-y-1">
+                        <li><strong>Start Backup Now:</strong> Select one or more sources, pick a destination (for Local/Both), then click <em>Start Backup Now</em>.</li>
+                        <li><strong>During backup:</strong> A small status  shows job progress .</li>
+                        <li><strong>On success:</strong> A success toast appears and the History table updates.</li>
+                        <li><strong>On failure:</strong> An error toast shows a reason (permissions, path, agent offline, etc.).</li>
+                    </ul>
+                    <p class="font-semibold mt-3 mb-1">Backup History</p>
+                    <ul class="list-disc list-inside space-y-1">
+                        <li><strong>Verify Visible Files:</strong> Manually checks existence of currently visible rows.</li>
+                        <li><strong>Verify on Agent:</strong> Per-row check that queues an agent task to confirm file existence.</li>
+                        <li><strong>Status badges:</strong> Queued → Checking… → Exists/Missing, or Error/Timed out.</li>
+                    </ul>
+                    <p class="font-semibold mt-3 mb-1">Status badges interpretation</p>
+                    <ul class="list-disc list-inside space-y-1">
+                        <li><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Queued</span> — The request was received and a job was created on the agent.</li>
+                        <li><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">Checking…</span> — The agent is actively checking the file.</li>
+                        <li><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Exists</span> — The file was found at the expected location.</li>
+                        <li><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Missing</span> — The file was not found. Confirm the path and storage location.</li>
+                        <li><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Timed out</span> — The UI stopped waiting for a response. The agent may be busy or offline.</li>
+                        <li><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Error</span> — An error occurred (e.g., no online agent, permission denied). See toast for details.</li>
+                        <li><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">Unknown</span> — No result yet for this entry.</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="mt-3 text-xs text-blue-800">
+                <p class="font-semibold">Troubleshooting quick tips</p>
+                <ul class="list-disc list-inside space-y-1">
+                    <li><strong>No online agent:</strong> Start the agent and ensure only one agent is registered and online for your user. </li>
+                    <li><strong>Permission denied:</strong> Ensure the destination directory is writable by the agent process.</li>
+                    <li><strong>Remote connectivity:</strong> Make sure that the client running the agent has a stable network connection.</li>
+                    
+                    <li><strong>Disk space:</strong> Confirm there is enough space at the destination.</li>
+                    <li><strong>Queued task not processing:</strong> Make sure the agent has no pending tasks/active tasks before manually starting a backup job.</li>
+                </ul>
+            </div>
+        </div>
     </div>
  @endsection
 <!-- Custom Delete Confirmation Modal -->
@@ -353,6 +413,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const destGroup = document.getElementById('manual-destination-group');
         const cloudGroup = document.getElementById('manual-cloud-group');
         const addDestGroup = document.getElementById('add-destination-group');
+        const destSelect = document.getElementById('manual-destination-select');
         
         // If system is offline, force local storage only
         if (isSystemOffline && (storage === 'remote' || storage === 'both')) {
@@ -364,10 +425,17 @@ document.addEventListener('DOMContentLoaded', function() {
             destGroup.classList.remove('hidden');
             addDestGroup.classList.remove('hidden');
             cloudGroup.classList.add('hidden');
+            // Restore required for local/both
+            if (destSelect) destSelect.setAttribute('required', 'required');
         } else if (storage === 'remote') {
             destGroup.classList.add('hidden');
             addDestGroup.classList.add('hidden');
             cloudGroup.classList.add('hidden');
+            // For remote-only, destination is not required nor applicable
+            if (destSelect) {
+                destSelect.removeAttribute('required');
+                destSelect.value = '';
+            }
         }
     }
     document.getElementById('manual_storage_location').addEventListener('change', updateManualBackupDestination);

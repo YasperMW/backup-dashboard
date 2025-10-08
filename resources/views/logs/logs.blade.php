@@ -30,9 +30,6 @@
                                 class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                             <option value="">All Types</option>
                             <option value="login" {{ request('type') == 'login' ? 'selected' : '' }}>Login</option>
-                            <option value="system" {{ request('type') == 'system' ? 'selected' : '' }}>System</option>
-                            <option value="security" {{ request('type') == 'security' ? 'selected' : '' }}>Security</option>
-                            <option value="error" {{ request('type') == 'error' ? 'selected' : '' }}>Error</option>
                             <option value="backup" {{ request('type') == 'backup' ? 'selected' : '' }}>Backup</option>
                             <option value="failed_job" {{ request('type') == 'failed_job' ? 'selected' : '' }}>Failed Jobs</option>
                         </select>
@@ -65,7 +62,7 @@
         <div class="bg-white rounded-lg shadow-md overflow-hidden">
             <div class="p-6 border-b border-gray-200">
                 <div class="flex items-center justify-between">
-                    <h2 class="text-xl font-semibold text-gray-800">System Logs</h2>
+                    <h2 class="text-xl font-semibold text-gray-800">Application Logs</h2>
                 </div>
             </div>
             <div class="overflow-x-auto">

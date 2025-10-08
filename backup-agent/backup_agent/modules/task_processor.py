@@ -118,6 +118,8 @@ class TaskProcessor:
                 result = {'status': 'completed', 'details': details}
             elif task['type'] == 'remote_file_check':
                 result = self._process_remote_file_check_task(task)
+            elif task['type'] == 'integrity_check':
+                result = self._process_integrity_check_task(task)
             else:
                 raise ValueError(f"Unsupported task type: {task['type']}")
             
@@ -169,6 +171,57 @@ class TaskProcessor:
         except Exception as e:
             self._update_task_status(task['id'], 'failed', {'error': str(e)})
             return {'status': 'failed', 'error': str(e)}
+
+    def _process_integrity_check_task(self, task: Dict) -> Dict:
+        """Verify integrity by computing SHA-256 of the encrypted archive and comparing to expected_hash.
+
+        Expects options:
+          - archive: { type: 'local'|'remote', directory, filename }
+          - expected_hash: str
+          - remote: { host, user, pass, path } when archive.type == 'remote'
+        """
+        opts = task.get('options') or {}
+        archive = (opts.get('archive') or {})
+        expected = (opts.get('expected_hash') or '')
+        remote = (opts.get('remote') or {})
+        if not archive.get('filename'):
+            return {'status': 'failed', 'error': 'Missing archive filename for integrity check'}
+        # Determine local path to check
+        tmp_path = None
+        try:
+            if archive.get('type') == 'remote':
+                # Build remote full path and download to temp
+                import tempfile, os
+                remote_full = os.path.join(archive.get('directory') or remote.get('path') or '', archive['filename'])
+                fd, tmp_local = tempfile.mkstemp(suffix='.enc')
+                import os as _os
+                _os.close(fd)
+                self.backup_manager._download_remote(remote_full, tmp_local, remote)
+                tmp_path = tmp_local
+                local_to_check = tmp_local
+            else:
+                import os
+                local_to_check = os.path.join(archive.get('directory') or '', archive['filename'])
+                if not os.path.isfile(local_to_check):
+                    return {'status': 'failed', 'error': f'Local archive not found: {local_to_check}'}
+            # Compute checksum using backup_manager helper
+            actual = self.backup_manager._calculate_checksum(local_to_check)
+            ok = (expected == actual) if expected else True
+            details = {'phase': 'completed', 'ok': ok, 'expected': expected, 'actual': actual}
+            self._update_task_status(task['id'], 'completed', {'details': details})
+            return {'status': 'completed', 'ok': ok, 'expected': expected, 'actual': actual}
+        except Exception as e:
+            self._update_task_status(task['id'], 'failed', {'error': str(e)})
+            return {'status': 'failed', 'error': str(e)}
+        finally:
+            # Clean up temp file if we downloaded
+            if tmp_path:
+                try:
+                    import os
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+                except Exception:
+                    pass
 
     def _process_restore_task(self, task: Dict) -> Dict:
         """Process a restore task"""

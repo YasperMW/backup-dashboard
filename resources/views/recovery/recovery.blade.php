@@ -92,10 +92,8 @@
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     @if($history->status === 'failed')
                                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Failed</span>
-                                    @elseif($history->status === 'completed')
-                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Available</span>
                                     @else
-                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">Unknown</span>
+                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">Not Checked</span>
                                     @endif
                                 </td>
                             </tr>
@@ -132,8 +130,8 @@
                     </div>
                     <p class="mt-1 text-xs text-gray-500">Browser security limits reading full local paths. If needed, enter the exact agent/container path manually (e.g., <code>/tmp/restore_out</code>).</p>
                 </div>
-                <!-- Restore Options -->
-                <div>
+                <!-- Restore Options (hidden) -->
+                <div class="hidden">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Restore Options</label>
                     <div class="space-y-2">
                         <label class="inline-flex items-center">
@@ -163,6 +161,52 @@
             <button id="start-restore-btn" class="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
                 Start Restore
             </button>
+        </div>
+
+        <!-- Quick User Guide -->
+        <div class="mt-6 bg-blue-50 border border-blue-200 rounded-md p-4">
+            <h3 class="text-sm font-semibold text-blue-800 mb-2">How to use Recovery actions</h3>
+            <ul class="list-disc list-inside text-sm text-blue-900 space-y-1">
+                <li><strong>Verify on Agent:</strong> Checks if the selected backup file exists on the agent (local or remote). The Status column updates from Not Checked → Queued → Checking… → Exists or Missing.</li>
+                <li><strong>Verify Integrity:</strong> Computes the backup's SHA-256 on the agent and compares it to the expected value. The Status column shows Queued → Still verifying… → Verified or Mismatch, and a toast summarizes the result.</li>
+                <li><strong>Start Restore:</strong> Restores the selected backup to your chosen path. You can choose to Overwrite and Preserve permissions. A progress dialog shows phases and completion.</li>
+            </ul>
+            <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-white/60 border border-blue-100 rounded p-3">
+                    <h4 class="text-xs font-semibold text-blue-900 mb-1">Verify on Agent — Results</h4>
+                    <ul class="text-xs text-blue-900 list-disc list-inside space-y-1">
+                        <li><strong>Exists:</strong> File is present; you can proceed to restore.</li>
+                        <li><strong>Missing:</strong> File not found on agent. For remote backups, confirm remote path and credentials in Settings. For local, confirm destination directory.</li>
+                        <li><strong>Error/Timeout:</strong> Agent offline or network issue. Ensure an agent is Online (Settings → Registered Agents) and try again.</li>
+                    </ul>
+                </div>
+                <div class="bg-white/60 border border-blue-100 rounded p-3">
+                    <h4 class="text-xs font-semibold text-blue-900 mb-1">Verify Integrity — Results</h4>
+                    <ul class="text-xs text-blue-900 list-disc list-inside space-y-1">
+                        <li><strong>Verified:</strong> Computed hash matches expected. Toast shows the SHA-256.</li>
+                        <li><strong>Mismatch:</strong> Computed hash differs. The toast shows expected vs actual. Try re-uploading or selecting another backup.</li>
+                        <li><strong>File not found:</strong> Ensure the file exists on the agent (use Verify on Agent) and that remote credentials/path are correct.</li>
+                        <li><strong>Timeout/Error:</strong> Restart the agent to ensure it supports integrity checks, then retry. Check remote host reachability and credentials.</li>
+                    </ul>
+                </div>
+                <div class="bg-white/60 border border-blue-100 rounded p-3">
+                    <h4 class="text-xs font-semibold text-blue-900 mb-1">Start Restore — Results</h4>
+                    <ul class="text-xs text-blue-900 list-disc list-inside space-y-1">
+                        <li><strong>Completed:</strong> Files restored to the specified path. A success toast appears.</li>
+                        <li><strong>Failed:</strong> The dialog shows the last phase. Common causes: insufficient disk space, permission denied, invalid restore path.</li>
+                        <li><strong>Fix:</strong> Choose a writable path on the agent, ensure enough space, and try unchecking Overwrite if locked files are present.</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="mt-3 text-xs text-blue-800">
+                <p class="font-semibold">Troubleshooting quick tips</p>
+                <ul class="list-disc list-inside space-y-1">
+                    <li><strong>No online agent:</strong> Start the agent..Wait for the agent to finish any pending tasks. And also make sure that you only have one agent registered, if you have multiple agents registered,delete the old agent and restart the agent. you can only use one at a time.</li>
+                    <li><strong>Remote checks fail:</strong> Ensure that you can connect to the internet and you have a stable network connection.</li>
+                    <li><strong>Encryption issues:</strong> Ensure that openssl and python requirements are installed on the client machine running the agent.</li>
+                    <li><strong>Permission denied:</strong> Use a restore path that the agent process can write to, or adjust permissions.</li>
+                </ul>
+            </div>
         </div>
 
 
@@ -220,9 +264,7 @@
                     <td class="px-6 py-4 whitespace-nowrap">
                         ${b.status === 'failed'
                             ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Failed</span>'
-                            : b.status === 'completed'
-                                ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Available</span>'
-                                : '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">Unknown</span>'}
+                            : '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">Not Checked</span>'}
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -398,104 +440,7 @@
                 showToast('No online agents found. Please start the agent and try again.', 'error');
                 return;
             }
-            // Pre-verify on agent before starting restore
-            const row = selected.closest('tr');
-            const historyId = row ? row.getAttribute('data-history-id') : null;
-            const isRemote = row && row.getAttribute('data-is-remote') === '1';
-            if (!historyId) {
-                this.disabled = false;
-                showToast('Invalid selection.', 'error');
-                return;
-            }
-            let statusCell = row.querySelectorAll('td')[6] || row.querySelector('td:last-child');
-            const badge = statusCell ? statusCell.querySelector('span') : null;
-            const originalBadge = { className: badge ? badge.className : '', text: badge ? badge.textContent : '' };
-            if (badge) {
-                badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800';
-                badge.textContent = 'Queued';
-            }
-            const endpoint = isRemote ? `/backup/history/${historyId}/remote-file-check` : `/backup/history/${historyId}/file-check`;
-            try {
-                const qres = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-                    }
-                });
-                const qjson = await qres.json().catch(() => null);
-                if (!qjson || !qjson.success || !qjson.data || !qjson.data.job_id) {
-                    throw new Error((qjson && qjson.message) ? qjson.message : 'Queue failed');
-                }
-                if (badge) {
-                    badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800';
-                    badge.textContent = 'Checking...';
-                }
-                const pollMs = 1500; let attempts = 0; const maxAttempts = 40;
-                const verifyResult = await new Promise((resolve) => {
-                    const poll = () => {
-                        attempts++;
-                        fetch(`/backup/status/${qjson.data.job_id}`, { headers: { 'X-Requested-With': 'XMLHttpRequest' }})
-                            .then(r => r.json()).then(sj => {
-                                if (!sj.success) throw new Error('Status fetch failed');
-                                const d = sj.data || {};
-                                if (d.status === 'completed' || d.status === 'failed') {
-                                    const exists = d.progress && typeof d.progress.exists !== 'undefined' ? !!d.progress.exists : null;
-                                    resolve({ done: true, exists, status: d.status });
-                                } else if (attempts < maxAttempts) {
-                                    setTimeout(poll, pollMs);
-                                } else {
-                                    resolve({ done: false, exists: null, status: 'timeout' });
-                                }
-                            }).catch(() => {
-                                if (attempts < maxAttempts) setTimeout(poll, pollMs);
-                                else resolve({ done: false, exists: null, status: 'error' });
-                            });
-                    };
-                    poll();
-                });
-                if (verifyResult.exists === true) {
-                    if (badge) {
-                        badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800';
-                        badge.textContent = 'Exists';
-                    }
-                    // Proceed to restore
-                } else if (verifyResult.exists === false) {
-                    if (badge) {
-                        badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800';
-                        badge.textContent = 'Missing';
-                    }
-                    // Disable selection when missing
-                    const radio = row.querySelector('input[name="backup_id"]');
-                    if (radio) {
-                        const wasChecked = radio.checked;
-                        radio.checked = false;
-                        radio.disabled = true;
-                        radio.title = 'Backup not available on agent';
-                        if (wasChecked) {
-                            showToast('This backup is missing on the agent and cannot be restored.', 'error');
-                        }
-                    }
-                    this.disabled = false;
-                    return; // stop here, do not start restore
-                } else {
-                    // Unknown result
-                    if (badge) {
-                        badge.className = originalBadge.className || 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800';
-                        badge.textContent = originalBadge.text || 'Unknown';
-                    }
-                    this.disabled = false;
-                    showToast('Could not verify backup on agent. Please try again.', 'error');
-                    return;
-                }
-            } catch (e) {
-                if (badge) {
-                    badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800';
-                    badge.textContent = e && e.message ? e.message : 'Queue failed';
-                }
-                this.disabled = false;
-                return;
-            }
+            // Directly start restore without pre-verification
             showRestoreProgressModal();
             fetch('/backup/restore', {
                 method: 'POST',
@@ -653,7 +598,18 @@
                 showToast('Please select a backup to verify.', 'error');
                 return;
             }
-            this.disabled = true;
+            const btn = this;
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Queuing...';
+            // Update status badge to Queued
+            const row = selected.closest('tr');
+            let statusCell = row ? (row.querySelectorAll('td')[6] || row.querySelector('td:last-child')) : null;
+            let badge = statusCell ? statusCell.querySelector('span') : null;
+            if (badge) {
+                badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800';
+                badge.textContent = 'Queued';
+            }
             fetch('/backup/verify-integrity', {
                 method: 'POST',
                 headers: {
@@ -661,18 +617,84 @@
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
                     'X-Requested-With': 'XMLHttpRequest'
                 },
-                body: JSON.stringify({
-                    backup_id: selected.value
-                })
+                body: JSON.stringify({ backup_id: selected.value })
             })
             .then(res => res.json())
             .then(data => {
-                this.disabled = false;
-                showToast(data.message, data.success ? 'success' : 'error');
+                if (!data || !data.success || !data.data || !data.data.job_id) {
+                    throw new Error((data && data.message) ? data.message : 'Failed to queue integrity check');
+                }
+                const jobId = data.data.job_id;
+                btn.textContent = 'Verifying...';
+                // Show "Still verifying…" while polling
+                if (badge) {
+                    badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800';
+                    badge.textContent = 'Still verifying…';
+                }
+                // Poll job status
+                const pollMs = 1500; let attempts = 0; const maxAttempts = 60;
+                const poll = () => {
+                    attempts++;
+                    fetch(`/backup/status/${jobId}`, { headers: { 'X-Requested-With': 'XMLHttpRequest' }})
+                        .then(r => r.json())
+                        .then(sj => {
+                            if (!sj.success) throw new Error('Status fetch failed');
+                            const d = sj.data || {};
+                            if (d.status === 'completed' || d.status === 'failed') {
+                                // Extract integrity details
+                                const details = (d.progress && d.progress.details) ? d.progress.details : (d.details || {});
+                                const ok = details && typeof details.ok !== 'undefined' ? !!details.ok : (d.status === 'completed');
+                                const expected = details && details.expected ? details.expected : '';
+                                const actual = details && details.actual ? details.actual : '';
+                                btn.disabled = false;
+                                btn.textContent = originalText;
+                                // Clear verifying badge
+                                if (badge) {
+                                    if (ok) {
+                                        badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800';
+                                        badge.textContent = 'Verified';
+                                    } else {
+                                        badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800';
+                                        badge.textContent = 'Mismatch';
+                                    }
+                                }
+                                if (ok) {
+                                    showToast('Backup is authentic. Integrity OK.' + (actual ? ` (SHA-256: ${actual})` : ''), 'success');
+                                } else {
+                                    const msg = 'Integrity check failed' + (expected && actual ? ` (expected ${expected} vs actual ${actual})` : '');
+                                    showToast(msg, 'error');
+                                }
+                            } else if (attempts < maxAttempts) {
+                                setTimeout(poll, pollMs);
+                            } else {
+                                btn.disabled = false;
+                                btn.textContent = originalText;
+                                if (badge) {
+                                    badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800';
+                                    badge.textContent = 'Timed out';
+                                }
+                                showToast('Integrity check timed out.', 'error');
+                            }
+                        })
+                        .catch(() => {
+                            if (attempts < maxAttempts) setTimeout(poll, pollMs);
+                            else {
+                                btn.disabled = false;
+                                btn.textContent = originalText;
+                                if (badge) {
+                                    badge.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800';
+                                    badge.textContent = 'Error';
+                                }
+                                showToast('Integrity check error.', 'error');
+                            }
+                        });
+                };
+                poll();
             })
-            .catch(() => {
-                this.disabled = false;
-                showToast('Verification failed.', 'error');
+            .catch((err) => {
+                btn.disabled = false;
+                btn.textContent = originalText;
+                showToast(err && err.message ? err.message : 'Verification failed.', 'error');
             });
         });
         document.getElementById('browse-restore-path').addEventListener('click', function() {

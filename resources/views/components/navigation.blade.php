@@ -111,7 +111,7 @@
                                 <span x-show="!manualOffline">Click to go Offline</span>
                             </span>
                             <span class="text-xs text-red-400" x-show="lastAttemptFailed" x-transition.opacity.duration.300ms aria-live="polite">
-                                Could not connect to {{ config('backup.linux_host') }}:22
+                                Could not connect 
                             </span>
                         </div>
                     </div>

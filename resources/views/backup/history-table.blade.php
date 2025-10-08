@@ -7,6 +7,11 @@
         pointer-events: none;
     }
 </style>
+<div class="mb-3 flex items-center justify-end gap-2">
+    <button id="verify-visible-btn" class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">
+        Verify Visible Files
+    </button>
+</div>
 <div class="overflow-x-auto">
     <table class="min-w-full divide-y divide-gray-200">
         <thead class="bg-gray-50">
@@ -17,8 +22,6 @@
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Filename</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Integrity Hash</th>
-                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Compression</th>
                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
             </tr>
@@ -57,8 +60,6 @@
                             <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">Unknown</span>
                         @endif
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{{ $history->integrity_hash ?? '-' }}</td>
-                    <td class="px-4 py-2 text-sm text-gray-900">{{ $history->compression_level ?? 'none' }}</td>
                     <td class="px-4 py-2 text-sm text-gray-900">{{ $history->backup_type ?? 'full' }}</td>
                     <td class="px-4 py-2 text-sm text-gray-900">
                         <button data-history-id="{{ $history->id }}" class="verify-file-btn px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50">Verify on Agent</button>
@@ -69,7 +70,7 @@
         @if($backups->count() > $showLimit)
         <tfoot>
         <tr>
-            <td colspan="6" class="text-center py-2">
+            <td colspan="8" class="text-center py-2">
                 <button id="view-more-backups" class="text-blue-600 hover:underline">View More</button>
             </td>
         </tr>
@@ -172,17 +173,25 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Auto-verify first 5 visible rows after load
-    const rows = Array.from(document.querySelectorAll('#backup-history-tbody tr')).filter(tr => !tr.classList.contains('hidden-row'));
-    const toCheck = rows.slice(0, 5);
-    let index = 0;
-    const next = () => {
-        if (index >= toCheck.length) return;
-        const tr = toCheck[index++];
-        const btn = tr.querySelector('.verify-file-btn');
-        if (btn && !btn.disabled) btn.click();
-        setTimeout(next, 800);
-    };
-    setTimeout(next, 1200);
+    // Manual batch verification for visible rows
+    function startBatchVerifyVisible(limit = 5) {
+        const rows = Array.from(document.querySelectorAll('#backup-history-tbody tr')).filter(tr => !tr.classList.contains('hidden-row'));
+        const toCheck = rows.slice(0, limit);
+        let index = 0;
+        const step = () => {
+            if (index >= toCheck.length) return;
+            const tr = toCheck[index++];
+            const btn = tr.querySelector('.verify-file-btn');
+            if (btn && !btn.disabled) btn.click();
+            setTimeout(step, 800);
+        };
+        step();
+    }
+    const verifyVisibleBtn = document.getElementById('verify-visible-btn');
+    if (verifyVisibleBtn) {
+        verifyVisibleBtn.addEventListener('click', function() {
+            startBatchVerifyVisible(5);
+        });
+    }
 });
 </script>

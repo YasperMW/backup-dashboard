@@ -11,24 +11,7 @@
             <p class="mt-1 text-sm text-gray-600">Configure advanced security settings for your application.</p>
         </div>
 
-        <!-- File Storage -->
-        <div class="bg-white rounded-lg shadow-sm p-6">
-            <h3 class="text-base font-medium text-gray-900 mb-4">File Storage</h3>
-            <div class="space-y-4">
-                <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                    <div>
-                        <h4 class="text-sm font-medium text-gray-900">Write Once Read Many (WORM)</h4>
-                        <p class="mt-1 text-sm text-gray-500">Prevent changes to saved files after initial write.</p>
-                    </div>
-                    <div class="flex items-center">
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" class="sr-only peer">
-                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                        </label>
-                    </div>
-                </div>
-            </div>
-        </div>
+      
 
         <!-- Encryption -->
         <div class="bg-white rounded-lg shadow-sm p-6">
@@ -190,8 +173,8 @@
                             <option value="differential">Differential Backup</option>
                         </select>
                     </div>
-                    <!-- Compression Level -->
-                    <div>
+                    <!-- Compression Level (hidden) -->
+                    <div class="hidden">
                         <label class="block text-sm font-medium text-gray-700 mb-2">Compression Level</label>
                         <select id="compression_level" name="compression_level" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                             <option value="none">None</option>
@@ -200,8 +183,8 @@
                             <option value="high">High</option>
                         </select>
                     </div>
-                    <!-- Retention Period -->
-                    <div>
+                    <!-- Retention Period (hidden) -->
+                    <div class="hidden">
                         <label class="block text-sm font-medium text-gray-700 mb-2">Retention Period (days)</label>
                         <input type="number" id="retention_period" name="retention_period" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" min="1">
                     </div>
@@ -328,10 +311,35 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     }
 
+    // Custom Agent Delete Modal Integration
+    let pendingAgentId = null;
+    // Modal helpers defined at top-level in this scope
+    const agentDeleteModal = document.getElementById('agent-delete-confirm-modal');
+    const agentDeleteCancel = document.getElementById('agent-delete-modal-cancel');
+    const agentDeleteConfirm = document.getElementById('agent-delete-modal-confirm');
+    function openAgentDeleteModal() {
+        if (agentDeleteModal) agentDeleteModal.classList.remove('hidden');
+    }
+    function closeAgentDeleteModal() {
+        if (agentDeleteModal) agentDeleteModal.classList.add('hidden');
+        pendingAgentId = null;
+    }
+    if (agentDeleteCancel) {
+        agentDeleteCancel.addEventListener('click', closeAgentDeleteModal);
+    }
+    if (agentDeleteConfirm) {
+        agentDeleteConfirm.addEventListener('click', function() {
+            const id = pendingAgentId;
+            if (!id) return closeAgentDeleteModal();
+            deleteAgent(id);
+            closeAgentDeleteModal();
+        });
+    }
+
     function confirmDeleteAgent(id) {
         if (!id) return;
-        if (!confirm('Are you sure you want to delete this agent? This will revoke its access.')) return;
-        deleteAgent(id);
+        pendingAgentId = id;
+        openAgentDeleteModal();
     }
 
     function deleteAgent(id) {
@@ -875,11 +883,11 @@ document.addEventListener('DOMContentLoaded', function() {
                             @endforeach
                         </div>
                     </div>
-                    <div>
+                    <div class="hidden">
                         <label class="block text-sm font-medium text-gray-700 mb-2">Retention Days <span class="text-xs text-gray-400">(blank = global)</span></label>
                         <input type="number" name="retention_days" min="1" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="e.g. 30" />
                     </div>
-                    <div>
+                    <div class="hidden">
                         <label class="block text-sm font-medium text-gray-700 mb-2">Max Backups <span class="text-xs text-gray-400">(blank = global)</span></label>
                         <input type="number" name="max_backups" min="1" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="e.g. 10" />
                     </div>
@@ -915,8 +923,6 @@ document.addEventListener('DOMContentLoaded', function() {
                         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Frequency</th>
                         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
                         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Days</th>
-                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Retention Days</th>
-                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Max Backups</th>
                         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source(s)</th>
                         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Destination</th>
                         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Enabled</th>
@@ -928,8 +934,6 @@ document.addEventListener('DOMContentLoaded', function() {
                             <td class="px-4 py-2 text-sm text-gray-900">{{ ucfirst($schedule->frequency) }}</td>
                             <td class="px-4 py-2 text-sm text-gray-900">{{ $schedule->time }}</td>
                             <td class="px-4 py-2 text-sm text-gray-900">{{ $schedule->days_of_week ?? '-' }}</td>
-                            <td class="px-4 py-2 text-sm text-gray-900">{{ $schedule->retention_days ?? '-' }}</td>
-                            <td class="px-4 py-2 text-sm text-gray-900">{{ $schedule->max_backups ?? '-' }}</td>
                             <td class="px-4 py-2 text-sm text-gray-900">{{ is_array($schedule->source_directories) ? implode(', ', $schedule->source_directories) : $schedule->source_directories }}</td>
                             <td class="px-4 py-2 text-sm text-gray-900">{{ $schedule->destination_directory }}</td>
                             <td class="px-4 py-2 text-sm text-gray-900">{{ $schedule->enabled ? 'Yes' : 'No' }}</td>
@@ -950,5 +954,36 @@ document.addEventListener('DOMContentLoaded', function() {
        
 
         <!-- End Backup Configuration UI -->
+        </div>
+
+<!-- Agent Delete Confirmation Modal -->
+<div id="agent-delete-confirm-modal" class="fixed inset-0 z-50 hidden" aria-hidden="true">
+    <div class="absolute inset-0 bg-black/40"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+        <div class="w-full max-w-md bg-white rounded-lg shadow-lg overflow-hidden">
+            <div class="px-6 py-4">
+                <div class="flex items-start">
+                    <div class="mx-auto shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-red-100 sm:mx-0 sm:w-10 sm:h-10">
+                        <svg class="w-6 h-6 text-red-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                        </svg>
+                    </div>
+                    <div class="ms-4 text-start">
+                        <h3 class="text-lg font-medium text-gray-900" id="agent-delete-modal-title">Delete Agent</h3>
+                        <div class="mt-2 text-sm text-gray-600" id="agent-delete-modal-message">Are you sure you want to delete this agent? This will revoke its access.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex flex-row justify-end gap-2 px-6 py-4 bg-gray-100">
+                <button id="agent-delete-modal-cancel" type="button" class="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button id="agent-delete-modal-confirm" type="button" class="px-4 py-2 text-sm rounded-md bg-red-600 text-white hover:bg-red-700">Delete</button>
+            </div>
+        </div>
     </div>
-</x-settings-layout> 
+    <button class="sr-only" aria-hidden="true">close</button>
+    <style>
+        #agent-delete-confirm-modal:focus-within { outline: none; }
+    </style>
+    </div>
+
+</x-settings-layout>

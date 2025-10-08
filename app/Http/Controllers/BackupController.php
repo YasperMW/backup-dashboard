@@ -686,67 +686,60 @@ class BackupController extends Controller
      * Verify the integrity of a backup by recalculating its hash.
      */
     public function verifyBackupIntegrity(Request $request)
-        {
-            $request->validate([
-                'backup_id' => 'required|exists:backup_histories,id',
-            ]);
+    {
+        $request->validate([
+            'backup_id' => 'required|exists:backup_histories,id',
+        ]);
 
-            $backup = BackupHistory::findOrFail($request->backup_id);
-            $encPath = $backup->destination_directory . DIRECTORY_SEPARATOR . $backup->filename;
+        $backup = BackupHistory::findOrFail($request->backup_id);
 
-            $remotePath = config('backup.remote_path');
-            $remotePathNorm = rtrim(str_replace('\\', '/', $remotePath ?? ''), '/');
-            $destDirNorm = rtrim(str_replace('\\', '/', $backup->destination_directory ?? ''), '/');
-            $isRemote = ($backup->destination_type === 'remote') || ($remotePathNorm && $destDirNorm === $remotePathNorm);
-            $encLocalPath = $encPath;
-            if ($isRemote) {
-                $linux = new \App\Services\LinuxBackupService();
-                $remoteEncPath = str_replace('\\', '/', $encPath);
-                $remoteExists = $linux->exists($remoteEncPath);
-                $remoteDownloadPath = $remoteEncPath;
-                if (!$remoteExists && $remotePathNorm) {
-                    $altRemotePath = $remotePathNorm . '/' . $backup->filename;
-                    $remoteExists = $linux->exists($altRemotePath);
-                    if ($remoteExists) {
-                        $remoteDownloadPath = $altRemotePath;
-                    }
-                }
-                if (!$remoteExists) {
-                    return response()->json(['success' => false, 'message' => 'Remote backup file not found.']);
-                }
-                $tmpEnc = tempnam(sys_get_temp_dir(), 'remote_enc_') . '.enc';
-                if (!$linux->downloadFile($remoteDownloadPath, $tmpEnc)) {
-                    return response()->json(['success' => false, 'message' => 'Failed to download remote backup file.']);
-                }
-                $encLocalPath = $tmpEnc;
-            } else if (!file_exists($encPath)) {
-                return response()->json(['success' => false, 'message' => 'Backup file not found.']);
-            }
-
-            // Calculate hash and check integrity
-            $hash = hash_file('sha256', $encLocalPath);
-            $match = $backup->integrity_hash === $hash;
-
-            if ($match) {
-                $backup->integrity_verified_at = now();
-                $backup->save();
-            } else {
-                // Notify user that integrity check failed
-                auth()->user()->notify(new \App\Notifications\IntegrityCheckFailed($backup));
-            }
-
-            $resp = [
-                'success' => $match,
-                'message' => $match
-                    ? 'Backup is authentic and has not been tampered with.'
-                    : 'WARNING: Backup file has been changed or corrupted since creation! Integrity check failed.',
-                'expected_hash' => $backup->integrity_hash,
-                'actual_hash' => $hash,
-            ];
-            if (isset($tmpEnc) && file_exists($tmpEnc)) {
-                @unlink($tmpEnc);
-            }
-            return response()->json($resp);
+        // Pick an online agent for this user
+        $agent = Agent::where('status', 'online')
+            ->where('user_id', auth()->id())
+            ->first();
+        if (!$agent) {
+            return response()->json(['success' => false, 'message' => 'No online agents registered to your account'], 422);
         }
+
+        // Determine local vs remote
+        $remotePath = config('backup.remote_path');
+        $remotePathNorm = rtrim(str_replace('\\', '/', $remotePath ?? ''), '/');
+        $destDirNorm = rtrim(str_replace('\\', '/', $backup->destination_directory ?? ''), '/');
+        $isRemote = ($backup->destination_type === 'remote') || ($remotePathNorm && $destDirNorm === $remotePathNorm);
+
+        $archive = [
+            'type' => $isRemote ? 'remote' : 'local',
+            'directory' => $backup->destination_directory,
+            'filename' => $backup->filename,
+        ];
+
+        // Build job options for agent integrity check
+        $options = [
+            'type' => 'integrity_check',
+            'archive' => $archive,
+            'expected_hash' => $backup->integrity_hash,
+            // Remote config if needed
+            'remote' => [
+                'host' => config('backup.linux_host') ?? env('BACKUP_LINUX_HOST'),
+                'user' => config('backup.linux_user') ?? env('BACKUP_LINUX_USER'),
+                'pass' => config('backup.linux_pass') ?? env('BACKUP_LINUX_PASS'),
+                'path' => config('backup.remote_path') ?? env('BACKUP_LINUX_PATH'),
+            ],
+        ];
+
+        $job = \App\Models\BackupJob::create([
+            'agent_id' => $agent->id,
+            'user_id' => auth()->id(),
+            'name' => 'Integrity Check - ' . ($backup->filename ?? ''),
+            'source_path' => $backup->destination_directory,
+            'destination_path' => $backup->destination_directory,
+            'backup_type' => $backup->backup_type ?? 'full',
+            'status' => 'pending',
+            'options' => $options,
+            'started_at' => now(),
+        ]);
+
+        return response()->json(['success' => true, 'message' => 'Integrity check queued on agent', 'data' => ['job_id' => $job->id]]);
+    }
 
 } 

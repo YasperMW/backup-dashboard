@@ -1,9 +1,9 @@
 {
-  "server_url": "http://192.168.43.12:80",
-  "token": "a59c39d6199a1498c40ea4f03d93d5df9eaf6f09968603414d538627f858d12d",
-  "agent_id": 12,
-  "name": "safeguard",
+  "server_url": "http://127.0.0.1:8000",
+  "token": "0472a820a09a1158ca142d44ebc9b5d223d441887eff95ed908b76b20d67e93d",
+  "agent_id": 30,
+  "name": "hacker",
   "hostname": "kali",
   "os": "Linux 6.12.38+kali-amd64",
-  "registered_at": "2025-10-06T23:03:40Z"
+  "registered_at": "2025-10-08T02:34:17Z"
 }
