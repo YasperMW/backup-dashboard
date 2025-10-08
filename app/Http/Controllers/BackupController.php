@@ -559,7 +559,7 @@ class BackupController extends Controller
         $actuallyOffline = !$linux->isReachable(5);
         $isSystemOffline = $manualOffline || $actuallyOffline;
         $remotePath = config('backup.remote_path');
-        $backups = $query->orderByDesc('created_at')->get()->map(function($b) use ($linux, $remotePath, $isSystemOffline) {
+        $backups = $query->orderByDesc('created_at')->get()->map(function($b) use ($linux, $remotePath, $isSystemOffline, $manualOffline) {
             $destDirNorm = rtrim(str_replace('\\', '/', $b->destination_directory ?? ''), '/');
             $remotePathNorm = rtrim(str_replace('\\', '/', $remotePath ?? ''), '/');
             $isRemote = ($b->destination_type === 'remote') || ($remotePathNorm && $destDirNorm === $remotePathNorm);
@@ -567,17 +567,8 @@ class BackupController extends Controller
             $remoteFullPath = str_replace('\\', '/', $localFullPath);
             // Determine exists based on offline/online and destination type
             if ($isRemote) {
-                if ($isSystemOffline) {
-                    $exists = null; // unknown due to no connection
-                } else {
-                    // First try with full path
-                    $exists = $linux->exists($remoteFullPath);
-                    // If not found, try with just the filename in the default remote path
-                    if (!$exists) {
-                        $filenameOnly = basename($remoteFullPath);
-                        $exists = $linux->exists($linux->getRemotePath() . '/' . $filenameOnly);
-                    }
-                }
+                // No direct remote existence check here; handled by agent workflows elsewhere
+                $exists = null;
             } else {
                 $exists = file_exists($localFullPath);
             }

@@ -1,7 +1,7 @@
 <?php
 
 return array (
-  'encryption_type' => 'aes-256-cbc',
+  'encryption_type' => 'aes-128-cbc',
   'key_rotation_frequency' => '7_days',
   'last_key_rotation' => '2025-09-24T00:27:58.380348Z',
   'encryption_keys' => 

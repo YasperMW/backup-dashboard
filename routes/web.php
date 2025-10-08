@@ -53,7 +53,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/backup/schedule', [\App\Http\Controllers\BackupController::class, 'createSchedule'])->name('backup.schedule.create');
     Route::get('/backup/history/fragment', [\App\Http\Controllers\BackupController::class, 'getBackupHistoryFragment'])->name('backup.history.fragment');
     Route::get('/backup/schedule/fragment', [\App\Http\Controllers\BackupController::class, 'getScheduleTableFragment'])->name('backup.schedule.fragment');
-    Route::post('/backup/filter', [\App\Http\Controllers\BackupController::class, 'filterBackups'])->name('backup.filter');
+    Route::match(['GET','POST'], '/backup/filter', [\App\Http\Controllers\BackupController::class, 'filterBackups'])->name('backup.filter');
 
     // Recovery/restore endpoints
     Route::post('/backup/restore', [\App\Http\Controllers\BackupController::class, 'restoreBackup'])->name('backup.restore');

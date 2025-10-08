@@ -169,24 +169,24 @@
             <ul class="list-disc list-inside text-sm text-blue-900 space-y-1">
                 <li><strong>Verify on Agent:</strong> Checks if the selected backup file exists on the agent (local or remote). The Status column updates from Not Checked → Queued → Checking… → Exists or Missing.</li>
                 <li><strong>Verify Integrity:</strong> Computes the backup's SHA-256 on the agent and compares it to the expected value. The Status column shows Queued → Still verifying… → Verified or Mismatch, and a toast summarizes the result.</li>
-                <li><strong>Start Restore:</strong> Restores the selected backup to your chosen path. You can choose to Overwrite and Preserve permissions. A progress dialog shows phases and completion.</li>
+                <li><strong>Start Restore:</strong> Restores the selected backup to your chosen path. A progress dialog shows phases and completion.</li>
             </ul>
             <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="bg-white/60 border border-blue-100 rounded p-3">
                     <h4 class="text-xs font-semibold text-blue-900 mb-1">Verify on Agent — Results</h4>
                     <ul class="text-xs text-blue-900 list-disc list-inside space-y-1">
                         <li><strong>Exists:</strong> File is present; you can proceed to restore.</li>
-                        <li><strong>Missing:</strong> File not found on agent. For remote backups, confirm remote path and credentials in Settings. For local, confirm destination directory.</li>
-                        <li><strong>Error/Timeout:</strong> Agent offline or network issue. Ensure an agent is Online (Settings → Registered Agents) and try again.</li>
+                        <li><strong>Missing:</strong> File not found on agent. For remote backups, check network connectivity</li>
+                        <li><strong>Error/Timeout:</strong> Agent offline or network issue. Ensure only one agent is running and only one agent is registered to your account and remove any unused agents (Settings → Registered Agents) and try again.</li>
                     </ul>
                 </div>
                 <div class="bg-white/60 border border-blue-100 rounded p-3">
                     <h4 class="text-xs font-semibold text-blue-900 mb-1">Verify Integrity — Results</h4>
                     <ul class="text-xs text-blue-900 list-disc list-inside space-y-1">
                         <li><strong>Verified:</strong> Computed hash matches expected. Toast shows the SHA-256.</li>
-                        <li><strong>Mismatch:</strong> Computed hash differs. The toast shows expected vs actual. Try re-uploading or selecting another backup.</li>
-                        <li><strong>File not found:</strong> Ensure the file exists on the agent (use Verify on Agent) and that remote credentials/path are correct.</li>
-                        <li><strong>Timeout/Error:</strong> Restart the agent to ensure it supports integrity checks, then retry. Check remote host reachability and credentials.</li>
+                        <li><strong>Mismatch:</strong> Computed hash differs. The toast shows expected vs actual.</li>
+                        <li><strong>File not found:</strong> Ensure the file exists on the agent (use Verify on Agent) </li>
+                        <li><strong>Timeout/Error:</strong> Restart the agent , then retry.Ensure that there is a stable internet connection</li>
                     </ul>
                 </div>
                 <div class="bg-white/60 border border-blue-100 rounded p-3">

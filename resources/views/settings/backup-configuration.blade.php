@@ -28,7 +28,7 @@
                             <option value="aes-128-gcm">AES-128-GCM (Fast + secure)</option>
                         </select>
                     </div>
-                    <div>
+                    <div class="hidden">
                         <label for="key_rotation_frequency" class="block text-sm font-medium text-gray-700">Key Rotation Frequency</label>
                         <p class="mt-1 text-sm text-gray-500">How often to automatically rotate encryption keys.</p>
                         <select id="key_rotation_frequency" name="key_rotation_frequency" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
@@ -39,7 +39,7 @@
                     </div>
                     
                     <!-- Key Status Section -->
-                    <div class="border-t pt-4">
+                    <div class="border-t pt-4 hidden">
                         <h4 class="text-sm font-medium text-gray-900 mb-3">Encryption Key Status</h4>
                         <div id="key-status-container" class="space-y-3">
                             <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
@@ -112,7 +112,7 @@
                                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hostname</th>
                                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OS</th>
                                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Version</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden">Status</th>
                                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Seen</th>
                                 <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
@@ -282,15 +282,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 data.agents.forEach(agent => {
                     const tr = document.createElement('tr');
                     const lastSeen = agent.last_seen_at ? new Date(agent.last_seen_at).toLocaleString() : '—';
-                    const statusBadge = agent.status === 'online'
-                        ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Online</span>'
-                        : '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">Offline</span>';
                     tr.innerHTML = `
                         <td class="px-4 py-2 text-sm text-gray-900">${escapeHtml(agent.name || '')}</td>
                         <td class="px-4 py-2 text-sm text-gray-900">${escapeHtml(agent.hostname || '')}</td>
                         <td class="px-4 py-2 text-sm text-gray-900">${escapeHtml(agent.os || '')}</td>
                         <td class="px-4 py-2 text-sm text-gray-900">${escapeHtml(agent.version || '')}</td>
-                        <td class="px-4 py-2 text-sm">${statusBadge}</td>
                         <td class="px-4 py-2 text-sm text-gray-900">${lastSeen}</td>
                         <td class="px-4 py-2 text-right">
                             <button data-id="${agent.id}" class="delete-agent inline-flex items-center px-3 py-1 text-xs bg-red-100 text-red-700 rounded-md hover:bg-red-200">Delete</button>
