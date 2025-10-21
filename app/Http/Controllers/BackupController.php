@@ -18,6 +18,7 @@ use App\Models\BackupConfiguration;
 use App\Models\BackupSchedule;
 use App\Services\LinuxBackupService;
 use App\Models\Agent;
+use Illuminate\Validation\Rule;
 
 class BackupController extends Controller
 {
@@ -25,9 +26,20 @@ class BackupController extends Controller
     public function showManagement(Request $request)
     {
         $backupConfig = BackupConfiguration::first();
-        $sourceDirectories = BackupSourceDirectory::all()->pluck('path');
-        $destinationDirectories = BackupDestinationDirectory::all()->pluck('path');
-        $schedules = BackupSchedule::all();
+
+        $isAdmin = auth()->check() && auth()->user()->role === 'admin';
+
+        $sourceDirectories = BackupSourceDirectory::query()
+            ->when(!$isAdmin, fn($q) => $q->where('user_id', auth()->id()))
+            ->pluck('path');
+
+        $destinationDirectories = BackupDestinationDirectory::query()
+            ->when(!$isAdmin, fn($q) => $q->where('user_id', auth()->id()))
+            ->pluck('path');
+
+        $schedules = BackupSchedule::query()
+            ->when(!$isAdmin, fn($q) => $q->where('user_id', auth()->id()))
+            ->get();
         if ($request->has('fragment')) {
             $fragment = $request->query('fragment');
             if ($fragment === 'source') {
@@ -48,11 +60,16 @@ class BackupController extends Controller
     public function addSourceDirectory(Request $request)
     {
         $request->validate([
-            'path' => 'required|string|unique:backup_source_directories,path',
+            'path' => [
+                'required',
+                'string',
+                Rule::unique('backup_source_directories', 'path')
+                    ->where(fn($q) => $q->where('user_id', auth()->id())),
+            ],
         ]);
         
         $path = $request->input('path');
-        BackupSourceDirectory::create(['path' => $path]);
+        BackupSourceDirectory::create(['path' => $path, 'user_id' => auth()->id()]);
         
         if ($request->ajax() || $request->wantsJson()) {
             return response()->json(['success' => true]);
@@ -63,7 +80,12 @@ class BackupController extends Controller
     // Delete a source directory
     public function deleteSourceDirectory($id, Request $request)
     {
-        BackupSourceDirectory::findOrFail($id)->delete();
+        $dir = BackupSourceDirectory::findOrFail($id);
+        $isAdmin = auth()->check() && auth()->user()->role === 'admin';
+        if (!$isAdmin && $dir->user_id !== auth()->id()) {
+            abort(403);
+        }
+        $dir->delete();
         if ($request->ajax() || $request->wantsJson()) {
             return response()->json(['success' => true]);
         }
@@ -74,11 +96,16 @@ class BackupController extends Controller
     public function addDestinationDirectory(Request $request)
     {
         $request->validate([
-            'path' => 'required|string|unique:backup_destination_directories,path',
+            'path' => [
+                'required',
+                'string',
+                Rule::unique('backup_destination_directories', 'path')
+                    ->where(fn($q) => $q->where('user_id', auth()->id())),
+            ],
         ]);
         
         $path = $request->input('path');
-        BackupDestinationDirectory::create(['path' => $path]);
+        BackupDestinationDirectory::create(['path' => $path, 'user_id' => auth()->id()]);
         
         if ($request->ajax() || $request->wantsJson()) {
             return response()->json(['success' => true]);
@@ -89,7 +116,12 @@ class BackupController extends Controller
     // Delete a destination directory
     public function deleteDestinationDirectory($id, Request $request)
     {
-        BackupDestinationDirectory::findOrFail($id)->delete();
+        $dir = BackupDestinationDirectory::findOrFail($id);
+        $isAdmin = auth()->check() && auth()->user()->role === 'admin';
+        if (!$isAdmin && $dir->user_id !== auth()->id()) {
+            abort(403);
+        }
+        $dir->delete();
         if ($request->ajax() || $request->wantsJson()) {
             return response()->json(['success' => true]);
         }
@@ -130,10 +162,19 @@ class BackupController extends Controller
         ini_set('memory_limit', '4096M');
         ini_set('max_input_time', 3600);
         
-        // Validate the request
+        // Validate the request (ensure dirs belong to user for non-admins)
+        $isAdmin = auth()->check() && auth()->user()->role === 'admin';
         $validated = $request->validate([
-            'source_directory' => 'required|exists:backup_source_directories,path',
-            'destination_directory' => 'required|exists:backup_destination_directories,path',
+            'source_directory' => [
+                'required',
+                Rule::exists('backup_source_directories', 'path')
+                    ->when(!$isAdmin, fn($rule) => $rule->where('user_id', auth()->id()))
+            ],
+            'destination_directory' => [
+                'required',
+                Rule::exists('backup_destination_directories', 'path')
+                    ->when(!$isAdmin, fn($rule) => $rule->where('user_id', auth()->id()))
+            ],
             'backup_type' => 'required|in:full,incremental',
             'storage_location' => 'required|string',
         ]);
@@ -141,6 +182,14 @@ class BackupController extends Controller
         // Get the source and destination directory IDs
         $source = BackupSourceDirectory::where('path', $validated['source_directory'])->first();
         $destination = BackupDestinationDirectory::where('path', $validated['destination_directory'])->first();
+        if (!$isAdmin) {
+            if (!$source || $source->user_id !== auth()->id()) {
+                abort(403);
+            }
+            if (!$destination || $destination->user_id !== auth()->id()) {
+                abort(403);
+            }
+        }
         
         // Find an available agent for the authenticated user
         $agent = Agent::where('status', 'online')
@@ -532,7 +581,10 @@ class BackupController extends Controller
     // Return schedule table fragment for AJAX
     public function getScheduleTableFragment()
     {
-        $schedules = BackupSchedule::all();
+        $isAdmin = auth()->check() && auth()->user()->role === 'admin';
+        $schedules = BackupSchedule::query()
+            ->when(!$isAdmin, fn($q) => $q->where('user_id', auth()->id()))
+            ->get();
         return view('backup.schedule-table', ['schedules' => $schedules]);
     }
 
@@ -544,7 +596,9 @@ class BackupController extends Controller
         $from = $request->input('from');
         $to = $request->input('to');
         $type = $request->input('type');
-        $query = BackupHistory::query();
+        $isAdmin = auth()->check() && auth()->user()->role === 'admin';
+        $query = BackupHistory::query()
+            ->when(!$isAdmin, fn($q) => $q->where('user_id', auth()->id()));
         if ($from) {
             $query->whereDate('created_at', '>=', $from);
         }
@@ -604,6 +658,10 @@ class BackupController extends Controller
         ]);
 
         $history = BackupHistory::findOrFail($request->backup_id);
+        $isAdmin = auth()->check() && auth()->user()->role === 'admin';
+        if (!$isAdmin && $history->user_id !== auth()->id()) {
+            return response()->json(['success' => false, 'message' => 'You are not authorized to restore this backup'], 403);
+        }
         // Find an available agent for the authenticated user
         $agent = Agent::where('status', 'online')
             ->where('user_id', auth()->id())

@@ -13,28 +13,31 @@ class LogController extends Controller
     {
         $logs = collect();
 
-        
-        // LOGIN LOGS
-        
-        $loginLogs = LoginLog::when($request->start_date, fn($q) => $q->whereDate('created_at', '>=', $request->start_date))
-                             ->when($request->end_date, fn($q) => $q->whereDate('created_at', '<=', $request->end_date))
-                             ->get()
-                             ->map(fn($log) => [
-                                 'timestamp' => $log->created_at,
-                                 'type'      => ucfirst($log->type ?? 'login'),
-                                 'severity'  => $log->status === 'failed' ? 'error' : 'info',
-                                 'message'   => $log->status === 'failed' ? 'Login failed' : 'Login successful',
-                                 'source'    => $log->ip_address,
-                                 'user'      => $log->email,
-                                 'log_type'  => 'login',
-                             ]);
+        $isAdmin = auth()->check() && auth()->user()->role === 'admin';
 
-        $logs = $logs->merge($loginLogs);
+        // LOGIN LOGS (admins only)
+        if ($isAdmin) {
+            $loginLogs = LoginLog::when($request->start_date, fn($q) => $q->whereDate('created_at', '>=', $request->start_date))
+                                 ->when($request->end_date, fn($q) => $q->whereDate('created_at', '<=', $request->end_date))
+                                 ->get()
+                                 ->map(fn($log) => [
+                                     'timestamp' => $log->created_at,
+                                     'type'      => ucfirst($log->type ?? 'login'),
+                                     'severity'  => $log->status === 'failed' ? 'error' : 'info',
+                                     'message'   => $log->status === 'failed' ? 'Login failed' : 'Login successful',
+                                     'source'    => $log->ip_address,
+                                     'user'      => $log->email,
+                                     'log_type'  => 'login',
+                                 ]);
+
+            $logs = $logs->merge($loginLogs);
+        }
 
         
         // BACKUP LOGS
         
-        $backupLogs = BackupHistory::when($request->start_date, fn($q) => $q->whereDate('started_at', '>=', $request->start_date))
+        $backupLogs = BackupHistory::when(!$isAdmin, fn($q) => $q->where('user_id', auth()->id()))
+                                   ->when($request->start_date, fn($q) => $q->whereDate('started_at', '>=', $request->start_date))
                                    ->when($request->end_date, fn($q) => $q->whereDate('started_at', '<=', $request->end_date))
                                    ->get()
                                    ->map(fn($log) => [
@@ -54,23 +57,23 @@ class LogController extends Controller
 
         $logs = $logs->merge($backupLogs);
 
-        
-        // FAILED JOBS
-        
-        $failedJobs = FailedJob::when($request->start_date, fn($q) => $q->whereDate('failed_at', '>=', $request->start_date))
-                               ->when($request->end_date, fn($q) => $q->whereDate('failed_at', '<=', $request->end_date))
-                               ->get()
-                               ->map(fn($log) => [
-                                   'timestamp' => $log->failed_at,
-                                   'type'      => 'Failed Job',
-                                   'severity'  => 'error',
-                                   'message'   => $log->exception,
-                                   'source'    => $log->connection,
-                                   'user'      => 'N/A',
-                                   'log_type'  => 'failed_job',
-                               ]);
+        // FAILED JOBS (admins only)
+        if ($isAdmin) {
+            $failedJobs = FailedJob::when($request->start_date, fn($q) => $q->whereDate('failed_at', '>=', $request->start_date))
+                                   ->when($request->end_date, fn($q) => $q->whereDate('failed_at', '<=', $request->end_date))
+                                   ->get()
+                                   ->map(fn($log) => [
+                                       'timestamp' => $log->failed_at,
+                                       'type'      => 'Failed Job',
+                                       'severity'  => 'error',
+                                       'message'   => $log->exception,
+                                       'source'    => $log->connection,
+                                       'user'      => 'N/A',
+                                       'log_type'  => 'failed_job',
+                                   ]);
 
-        $logs = $logs->merge($failedJobs);
+            $logs = $logs->merge($failedJobs);
+        }
 
         
         // KEYWORD SEARCH

@@ -6,5 +6,5 @@ use Illuminate\Database\Eloquent\Model;
 
 class BackupSourceDirectory extends Model
 {
-    protected $fillable = ['path'];
+    protected $fillable = ['path', 'user_id'];
 }

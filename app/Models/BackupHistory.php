@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class BackupHistory extends Model
 {
     protected $fillable = [
+        'user_id',
         'source_directory',
         'destination_directory',
         'destination_type',

@@ -53,7 +53,11 @@
                         </thead>
                         <tbody id="backup-list-tbody" class="bg-white divide-y divide-gray-200">
                             @php
-                                $backups = \App\Models\BackupHistory::orderByDesc('created_at')->get();
+                                $isAdmin = auth()->check() && auth()->user()->role === 'admin';
+                                $backups = \App\Models\BackupHistory::query()
+                                    ->when(!$isAdmin, fn($q) => $q->where('user_id', auth()->id()))
+                                    ->orderByDesc('created_at')
+                                    ->get();
                                 $showLimit = 5;
                                 // Agent-driven: do not use Linux service reachability or existence checks here
                                 $remotePath = config('backup.remote_path');

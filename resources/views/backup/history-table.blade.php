@@ -27,7 +27,11 @@
             </tr>
         </thead>
         @php
-            $backups = \App\Models\BackupHistory::orderByDesc('created_at')->get();
+            $isAdmin = auth()->check() && auth()->user()->role === 'admin';
+            $backups = \App\Models\BackupHistory::query()
+                ->when(!$isAdmin, fn($q) => $q->where('user_id', auth()->id()))
+                ->orderByDesc('created_at')
+                ->get();
             $showLimit = 5;
             // Agent-driven checks only: do not gate UI by Linux reachability
             $remotePath = config('backup.remote_path');

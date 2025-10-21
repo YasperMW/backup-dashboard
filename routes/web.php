@@ -105,8 +105,18 @@ Route::middleware('auth')->group(function () {
 
     });
 
-    Route::get('/login-logs', [\App\Http\Controllers\LoginLogController::class, 'index'])->name('login-logs.index');
-    Route::post('/login-logs/fetch', [\App\Http\Controllers\LoginLogController::class, 'fetch'])->name('login-logs.fetch');
+    // Admin-only routes
+    Route::middleware([\App\Http\Middleware\Admin::class])->prefix('admin')->name('admin.')->group(function () {
+        Route::get('/users', [\App\Http\Controllers\Admin\UserManagementController::class, 'index'])->name('users.index');
+        Route::patch('/users/{user}/role', [\App\Http\Controllers\Admin\UserManagementController::class, 'updateRole'])->name('users.updateRole');
+        Route::delete('/users/{user}', [\App\Http\Controllers\Admin\UserManagementController::class, 'destroy'])->name('users.destroy');
+    });
+
+    // Admin-only: Login logs
+    Route::middleware([\App\Http\Middleware\Admin::class])->group(function () {
+        Route::get('/login-logs', [\App\Http\Controllers\LoginLogController::class, 'index'])->name('login-logs.index');
+        Route::post('/login-logs/fetch', [\App\Http\Controllers\LoginLogController::class, 'fetch'])->name('login-logs.fetch');
+    });
 
     // Two Factor Authentication enable/disable
     Route::post('/two-factor/enable', [TwoFactorController::class, 'enable'])->name('two-factor.enable');

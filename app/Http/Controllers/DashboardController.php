@@ -9,16 +9,20 @@ class DashboardController extends Controller
 {
     public function index()
     {
-        // Get backup statistics
-        $totalBackups = \App\Models\BackupHistory::count();
-        $successfulBackups = \App\Models\BackupHistory::where('status', 'completed')->count();
-        $failedBackups = \App\Models\BackupHistory::where('status', 'failed')->count();
-        $storageUsed = \App\Models\BackupHistory::sum('size'); // in bytes
+        // Get backup statistics (scoped for non-admins)
+        $isAdmin = auth()->check() && auth()->user()->role === 'admin';
+        $baseQuery = \App\Models\BackupHistory::query()
+            ->when(!$isAdmin, fn($q) => $q->where('user_id', auth()->id()));
+
+        $totalBackups = (clone $baseQuery)->count();
+        $successfulBackups = (clone $baseQuery)->where('status', 'completed')->count();
+        $failedBackups = (clone $baseQuery)->where('status', 'failed')->count();
+        $storageUsed = (clone $baseQuery)->sum('size'); // in bytes
         $storageUsedFormatted = $this->formatBytes($storageUsed);
 
         // --- Chart Data: Backup History (all time, by month) ---
-        $first = \App\Models\BackupHistory::orderBy('created_at')->first();
-        $last = \App\Models\BackupHistory::orderByDesc('created_at')->first();
+        $first = (clone $baseQuery)->orderBy('created_at')->first();
+        $last = (clone $baseQuery)->orderByDesc('created_at')->first();
         if ($first && $last) {
             $start = \Carbon\Carbon::parse($first->created_at)->startOfMonth();
             $end = \Carbon\Carbon::parse($last->created_at)->startOfMonth();
@@ -32,14 +36,14 @@ class DashboardController extends Controller
         $labels = $months->map(function($m) {
             return date('M Y', strtotime($m.'-01'));
         });
-        $successData = $months->map(function($m) {
-            return \App\Models\BackupHistory::where('status', 'completed')
+        $successData = $months->map(function($m) use ($baseQuery) {
+            return (clone $baseQuery)->where('status', 'completed')
                 ->whereYear('created_at', substr($m, 0, 4))
                 ->whereMonth('created_at', substr($m, 5, 2))
                 ->count();
         });
-        $failedData = $months->map(function($m) {
-            return \App\Models\BackupHistory::where('status', 'failed')
+        $failedData = $months->map(function($m) use ($baseQuery) {
+            return (clone $baseQuery)->where('status', 'failed')
                 ->whereYear('created_at', substr($m, 0, 4))
                 ->whereMonth('created_at', substr($m, 5, 2))
                 ->count();
@@ -55,8 +59,8 @@ class DashboardController extends Controller
         ];
 
         // --- Chart Data: Backup Size Trend (last 6 months) ---
-        $sizeData = $months->map(function($m) {
-            return \App\Models\BackupHistory::whereYear('created_at', substr($m, 0, 4))
+        $sizeData = $months->map(function($m) use ($baseQuery) {
+            return (clone $baseQuery)->whereYear('created_at', substr($m, 0, 4))
                 ->whereMonth('created_at', substr($m, 5, 2))
                 ->sum('size') / (1024*1024*1024); // in GB
         });
@@ -64,15 +68,15 @@ class DashboardController extends Controller
         // --- Chart Data: Backup Type Distribution ---
         $typeLabels = ['Full', 'Incremental', 'Differential'];
         $typeKeys = ['full', 'incremental', 'differential'];
-        $typeCounts = collect($typeKeys)->map(function($type) {
-            return \App\Models\BackupHistory::where('backup_type', $type)->count();
+        $typeCounts = collect($typeKeys)->map(function($type) use ($baseQuery) {
+            return (clone $baseQuery)->where('backup_type', $type)->count();
         });
 
         // --- Chart Data: Backup Status Distribution ---
         $statusLabels = ['Completed', 'Failed', 'Pending'];
         $statusKeys = ['completed', 'failed', 'pending'];
-        $statusCounts = collect($statusKeys)->map(function($status) {
-            return \App\Models\BackupHistory::where('status', $status)->count();
+        $statusCounts = collect($statusKeys)->map(function($status) use ($baseQuery) {
+            return (clone $baseQuery)->where('status', $status)->count();
         });
 
         return view('dashboard', [

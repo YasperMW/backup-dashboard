@@ -174,18 +174,7 @@
                 <button type="submit" class="bg-green-500 text-white px-3 py-2 rounded-md hover:bg-green-600">Add Directory</button>
             </form>
             <div id="source-directory-list-container">
-            <ul class="mb-4">
-                @foreach(App\Models\BackupSourceDirectory::all() as $dir)
-                    <li class="flex items-center justify-between py-1">
-                        <span>{{ $dir->path }}</span>
-                        <form method="POST" action="{{ route('backup.deleteSourceDirectory', $dir->id) }}">
-                            @csrf
-                            @method('DELETE')
-                            <button type="submit" class="text-red-500 hover:text-red-700 ml-2">Delete</button>
-                        </form>
-                    </li>
-                @endforeach
-            </ul>
+                @include('backup.partials.source-list')
             </div>
             <!-- Destination Directories Section (only for local) -->
             <div id="add-destination-group">
@@ -196,18 +185,7 @@
                     <button type="submit" class="bg-green-500 text-white px-3 py-2 rounded-md hover:bg-green-600">Add Destination</button>
                 </form>
                 <div id="destination-directory-list-container">
-                <ul class="mb-4">
-                    @foreach(App\Models\BackupDestinationDirectory::all() as $dir)
-                        <li class="flex items-center justify-between py-1">
-                            <span>{{ $dir->path }}</span>
-                            <form method="POST" action="{{ route('backup.deleteDestinationDirectory', $dir->id) }}">
-                                @csrf
-                                @method('DELETE')
-                                <button type="submit" class="text-red-500 hover:text-red-700 ml-2">Delete</button>
-                            </form>
-                        </li>
-                    @endforeach
-                </ul>
+                    @include('backup.partials.destination-list')
                 </div>
             </div>
             <form method="POST" action="{{ route('backup.start') }}" id="manual-backup-form">

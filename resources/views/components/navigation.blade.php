@@ -40,6 +40,16 @@
                     System Logs
                 </a>
             </li>
+            @if(Auth::check() && Auth::user()->role === 'admin')
+            <li>
+                <a href="{{ route('admin.users.index') }}" class="flex items-center p-3 rounded-lg transition duration-200 {{ request()->routeIs('admin.users.*') ? 'bg-gray-900 text-white font-semibold' : 'hover:bg-gray-700 text-gray-300' }}">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87M15 11a4 4 0 10-8 0 4 4 0 008 0zm6 0a4 4 0 11-8 0 4 4 0 018 0z"/>
+                    </svg>
+                    User Management
+                </a>
+            </li>
+            @endif
         </ul>
     </nav>
 
