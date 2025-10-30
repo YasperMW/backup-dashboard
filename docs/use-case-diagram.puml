@@ -1,0 +1,341 @@
+@startuml Backup Dashboard Use Case Diagram
+
+!define RECTANGLE class
+
+skinparam actorStyle awesome
+skinparam packageStyle rectangle
+
+' Color coding for better visual distinction
+skinparam actor {
+    BackgroundColor<<User>> LightBlue
+    BorderColor<<User>> DarkBlue
+    BackgroundColor<<Admin>> LightCoral
+    BorderColor<<Admin>> DarkRed
+    BackgroundColor<<System>> LightGreen
+    BorderColor<<System>> DarkGreen
+}
+
+skinparam usecase {
+    BackgroundColor<<AdminOnly>> MistyRose
+    BorderColor<<AdminOnly>> Red
+    BackgroundColor<<UserOnly>> AliceBlue
+    BorderColor<<UserOnly>> Blue
+    BackgroundColor<<Shared>> Wheat
+    BorderColor<<Shared>> Orange
+}
+
+left to right direction
+
+' Actors with color coding
+actor "User" as User <<User>>
+actor "Admin" as Admin <<Admin>>
+actor "Backup Agent" as Agent <<System>>
+actor "System Scheduler" as Scheduler <<System>>
+actor "Email System" as Email <<System>>
+
+' System boundary
+rectangle "Backup Dashboard System" {
+    
+    ' Authentication & Authorization
+    package "Authentication & Security" {
+        usecase "Register Account" as UC1 <<Shared>>
+        usecase "Login" as UC2 <<Shared>>
+        usecase "Verify Email (OTP)" as UC3 <<Shared>>
+        usecase "Reset Password (OTP)" as UC4 <<Shared>>
+        usecase "Enable/Disable 2FA" as UC5 <<Shared>>
+        usecase "Verify 2FA Code" as UC6 <<Shared>>
+        usecase "Manage Recovery Codes" as UC7 <<Shared>>
+        usecase "Manage Sessions" as UC8 <<Shared>>
+        usecase "View Login Logs" as UC9 <<AdminOnly>>
+    }
+    
+    ' User Management
+    package "User Management" {
+        usecase "View All Users" as UC10 <<AdminOnly>>
+        usecase "Update User Role" as UC11 <<AdminOnly>>
+        usecase "Delete User" as UC12 <<AdminOnly>>
+        usecase "Manage Profile" as UC13 <<Shared>>
+    }
+    
+    ' Backup Configuration
+    package "Backup Configuration" {
+        usecase "Configure Backup Settings" as UC14
+        usecase "Add Source Directory" as UC15
+        usecase "Remove Source Directory" as UC16
+        usecase "Add Destination Directory" as UC17
+        usecase "Remove Destination Directory" as UC18
+        usecase "Test Connection" as UC19
+    }
+    
+    ' Backup Operations
+    package "Backup Operations" {
+        usecase "Start Manual Backup" as UC20
+        usecase "Create Backup Schedule" as UC21
+        usecase "Execute Scheduled Backup" as UC22
+        usecase "Monitor Backup Status" as UC23
+        usecase "View Backup History" as UC24
+        usecase "Filter Backups" as UC25
+        usecase "Verify Backup Integrity" as UC26
+        usecase "Check File Existence" as UC27
+    }
+    
+    ' Agent Management
+    package "Agent Management" {
+        usecase "Register Agent" as UC28
+        usecase "Send Heartbeat" as UC29
+        usecase "View Registered Agents" as UC30
+        usecase "Delete Agent" as UC31
+        usecase "Check Agent Online Status" as UC32
+        usecase "Get Agent Tasks" as UC33
+        usecase "Update Task Status" as UC34
+        usecase "Upload Backup File" as UC35
+    }
+    
+    ' Recovery & Restore
+    package "Recovery & Restore" {
+        usecase "Browse Backup Snapshots" as UC36
+        usecase "Restore from Backup" as UC37
+        usecase "Restore from File (.enc)" as UC38
+        usecase "Generate Docker Copy Script" as UC39
+        usecase "Clean Restore Folder" as UC40
+        usecase "Clean Local Backups" as UC41
+    }
+    
+    ' Encryption Management
+    package "Encryption Management" {
+        usecase "View Encryption Config" as UC42
+        usecase "Update Encryption Config" as UC43
+        usecase "Generate Encryption Key" as UC44
+        usecase "Activate Encryption Key" as UC45
+        usecase "Check Key Rotation" as UC46
+    }
+    
+    ' Dashboard & Monitoring
+    package "Dashboard & Monitoring" {
+        usecase "View Dashboard Statistics" as UC47
+        usecase "View Backup Charts" as UC48
+        usecase "View System Logs" as UC49
+        usecase "Export Logs" as UC50
+        usecase "Clear Logs" as UC51
+        usecase "View Log Details" as UC52
+        usecase "Check Remote Host Status" as UC53
+    }
+    
+    ' Notifications
+    package "Notifications" {
+        usecase "View Notifications" as UC54
+        usecase "Mark Notification as Read" as UC55
+        usecase "Mark All Notifications as Read" as UC56
+        usecase "Send Email Notifications" as UC57
+    }
+}
+
+' User relationships
+User --> UC1
+User --> UC2
+User --> UC3
+User --> UC4
+User --> UC5
+User --> UC6
+User --> UC7
+User --> UC8
+User --> UC13
+User --> UC14
+User --> UC15
+User --> UC16
+User --> UC17
+User --> UC18
+User --> UC19
+User --> UC20
+User --> UC21
+User --> UC23
+User --> UC24
+User --> UC25
+User --> UC26
+User --> UC27
+User --> UC28
+User --> UC30
+User --> UC31
+User --> UC32
+User --> UC36
+User --> UC37
+User --> UC38
+User --> UC39
+User --> UC40
+User --> UC41
+User --> UC42
+User --> UC43
+User --> UC44
+User --> UC45
+User --> UC46
+User --> UC47
+User --> UC48
+User --> UC49
+User --> UC50
+User --> UC51
+User --> UC52
+User --> UC53
+User --> UC54
+User --> UC55
+User --> UC56
+
+' Admin relationships (includes all User capabilities + admin-only features)
+' Authentication & Security (Shared)
+Admin --> UC1
+Admin --> UC2
+Admin --> UC3
+Admin --> UC4
+Admin --> UC5
+Admin --> UC6
+Admin --> UC7
+Admin --> UC8
+Admin --> UC9
+
+' User Management
+Admin --> UC10
+Admin --> UC11
+Admin --> UC12
+Admin --> UC13
+
+' Backup Configuration (Shared)
+Admin --> UC14
+Admin --> UC15
+Admin --> UC16
+Admin --> UC17
+Admin --> UC18
+Admin --> UC19
+
+' Backup Operations (Shared)
+Admin --> UC20
+Admin --> UC21
+Admin --> UC23
+Admin --> UC24
+Admin --> UC25
+Admin --> UC26
+Admin --> UC27
+
+' Agent Management (Shared)
+Admin --> UC28
+Admin --> UC30
+Admin --> UC31
+Admin --> UC32
+
+' Recovery & Restore (Shared)
+Admin --> UC36
+Admin --> UC37
+Admin --> UC38
+Admin --> UC39
+Admin --> UC40
+Admin --> UC41
+
+' Encryption Management (Shared)
+Admin --> UC42
+Admin --> UC43
+Admin --> UC44
+Admin --> UC45
+Admin --> UC46
+
+' Dashboard & Monitoring (Shared)
+Admin --> UC47
+Admin --> UC48
+Admin --> UC49
+Admin --> UC50
+Admin --> UC51
+Admin --> UC52
+Admin --> UC53
+
+' Notifications (Shared)
+Admin --> UC54
+Admin --> UC55
+Admin --> UC56
+
+' Agent relationships
+Agent --> UC28
+Agent --> UC29
+Agent --> UC33
+Agent --> UC34
+Agent --> UC35
+
+' Scheduler relationships
+Scheduler --> UC22
+
+' Email System relationships
+UC57 <-- Email
+UC3 ..> UC57 : <<include>>
+UC4 ..> UC57 : <<include>>
+UC6 ..> UC57 : <<include>>
+
+' Include relationships
+UC2 ..> UC3 : <<extend>>
+UC2 ..> UC6 : <<extend>>
+UC20 ..> UC23 : <<include>>
+UC22 ..> UC23 : <<include>>
+UC20 ..> UC35 : <<include>>
+UC22 ..> UC35 : <<include>>
+UC37 ..> UC26 : <<include>>
+UC38 ..> UC26 : <<include>>
+
+' Extend relationships
+UC5 ..> UC7 : <<include>>
+UC22 ..> UC21 : <<extend>>
+
+' Notification triggers
+UC20 ..> UC57 : <<include>>
+UC22 ..> UC57 : <<include>>
+UC37 ..> UC57 : <<include>>
+UC26 ..> UC57 : <<include>>
+
+note right of Agent
+  Python-based backup agent
+  that runs on client machines
+  and communicates via API
+end note
+
+note right of Scheduler
+  Laravel task scheduler
+  that triggers automated
+  backup jobs
+end note
+
+note left of User
+  **Regular User**
+  Can manage their own
+  backups, configurations,
+  and recovery operations
+end note
+
+note left of Admin
+  **Administrator**
+  Has all User capabilities
+  PLUS admin-only features:
+  - View all users
+  - Manage user roles
+  - View login logs
+  - Delete users
+end note
+
+legend right
+  |= Color |= Meaning |
+  | <back:LightBlue>Blue</back> | User Actor |
+  | <back:LightCoral>Red</back> | Admin Actor |
+  | <back:LightGreen>Green</back> | System Actor |
+  | <back:MistyRose>Pink Use Case</back> | Admin Only |
+  | <back:Wheat>Orange Use Case</back> | Shared (User & Admin) |
+  
+  **Note:** Admin has access to ALL User
+  capabilities plus admin-only features.
+  Connections shown explicitly for clarity.
+endlegend
+
+note bottom of "Backup Dashboard System"
+  **Backup Dashboard System**
+  A comprehensive backup management system with:
+  - Multi-factor authentication
+  - Scheduled and manual backups
+  - Encryption support
+  - Remote agent management
+  - Recovery and restore capabilities
+  - Real-time monitoring and notifications
+end note
+
+@enduml

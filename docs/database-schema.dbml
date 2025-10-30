@@ -1,0 +1,354 @@
+// Backup Dashboard Database Schema
+// Use this at https://dbdiagram.io/d
+// Database: safeguard
+// DBMS: MariaDB 11.8.3
+
+Project backup_dashboard {
+  database_type: 'MariaDB'
+}
+
+// ============================================
+// CORE ENTITIES
+// ============================================
+
+Table users {
+  id bigint [pk, increment, not null]
+  firstname varchar(191) [not null]
+  lastname varchar(191) [not null]
+  email varchar(191) [unique, not null]
+  email_verified_at timestamp [null]
+  password varchar(191) [not null]
+  role varchar(191) [not null, default: 'user']
+  two_factor_secret text [null]
+  two_factor_recovery_codes text [null]
+  two_factor_confirmed_at timestamp [null]
+  remember_token varchar(100) [null]
+  current_team_id bigint [null]
+  profile_photo_path varchar(2048) [null]
+  email_verification_code varchar(191) [null]
+  email_verification_code_expires_at timestamp [null]
+  created_at timestamp [null]
+  updated_at timestamp [null]
+  
+  indexes {
+    email [unique, name: 'users_email_unique']
+  }
+}
+
+Table agents {
+  id bigint [pk, increment, not null]
+  user_id bigint [not null]
+  name varchar(191) [not null]
+  hostname varchar(191) [not null]
+  ip_address varchar(191) [null]
+  os varchar(191) [null]
+  token varchar(64) [unique, not null]
+  last_seen_at timestamp [null]
+  capabilities json [null]
+  status varchar(191) [not null, default: 'offline']
+  version varchar(191) [null]
+  created_at timestamp [null]
+  updated_at timestamp [null]
+  deleted_at timestamp [null]
+  
+  indexes {
+    token [unique, name: 'agents_token_unique']
+    user_id [name: 'agents_user_id_foreign']
+  }
+}
+
+// ============================================
+// BACKUP MANAGEMENT
+// ============================================
+
+Table backup_configurations {
+  id bigint [pk, increment, not null]
+  storage_location varchar(191) [not null, default: 'local']
+  backup_type varchar(191) [not null, default: 'full']
+  compression_level varchar(191) [not null, default: 'none']
+  retention_period int [not null, default: 30]
+  created_at timestamp [null]
+  updated_at timestamp [null]
+}
+
+Table backup_source_directories {
+  id bigint [pk, increment, not null]
+  user_id bigint [null]
+  path varchar(191) [unique, not null]
+  created_at timestamp [null]
+  updated_at timestamp [null]
+  
+  indexes {
+    path [unique, name: 'backup_source_directories_path_unique']
+    user_id [name: 'backup_source_directories_user_id_index']
+  }
+}
+
+Table backup_destination_directories {
+  id bigint [pk, increment, not null]
+  user_id bigint [null]
+  path varchar(191) [unique, not null]
+  created_at timestamp [null]
+  updated_at timestamp [null]
+  
+  indexes {
+    path [unique, name: 'backup_destination_directories_path_unique']
+    user_id [name: 'backup_destination_directories_user_id_index']
+  }
+}
+
+Table backup_histories {
+  id bigint [pk, increment, not null]
+  user_id bigint [null]
+  source_directory varchar(191) [not null]
+  destination_directory varchar(191) [not null]
+  destination_type varchar(20) [null]
+  filename varchar(191) [not null]
+  size bigint [null]
+  status varchar(191) [not null, default: 'pending']
+  backup_type varchar(191) [not null, default: 'full']
+  compression_level varchar(191) [not null, default: 'none']
+  key_version varchar(191) [null]
+  started_at timestamp [null]
+  completed_at timestamp [null]
+  integrity_hash varchar(191) [null]
+  integrity_verified_at timestamp [null]
+  error_message text [null]
+  created_at timestamp [null]
+  updated_at timestamp [null]
+  
+  indexes {
+    destination_type [name: 'backup_histories_destination_type_index']
+    user_id [name: 'backup_histories_user_id_index']
+  }
+}
+
+Table backup_jobs {
+  id bigint [pk, increment, not null]
+  agent_id bigint [null]
+  user_id bigint [null]
+  name varchar(191) [null]
+  description text [null]
+  source_path varchar(191) [null]
+  destination_path varchar(191) [null]
+  backup_type backup_type_enum [not null, default: 'full']
+  status varchar(191) [not null, default: 'pending']
+  error text [null]
+  files_processed int [not null, default: 0]
+  size_processed bigint [not null, default: 0]
+  backup_path varchar(191) [null]
+  checksum varchar(191) [null]
+  size bigint [null]
+  options json [null]
+  started_at timestamp [null]
+  completed_at timestamp [null]
+  created_at timestamp [null]
+  updated_at timestamp [null]
+  deleted_at timestamp [null]
+  
+  indexes {
+    agent_id [name: 'backup_jobs_agent_id_index']
+    user_id [name: 'backup_jobs_user_id_index']
+    status [name: 'backup_jobs_status_index']
+  }
+}
+
+Table backup_schedules {
+  id bigint [pk, increment, not null]
+  user_id int [not null]
+  frequency varchar(191) [not null]
+  time time [null]
+  days_of_week varchar(191) [null]
+  source_directories json [not null]
+  destination_directory varchar(191) [not null]
+  enabled tinyint(1) [not null, default: 1]
+  retention_days int [null]
+  max_backups int [null]
+  created_at timestamp [null]
+  updated_at timestamp [null]
+}
+
+// ============================================
+// AUTHENTICATION & SECURITY
+// ============================================
+
+Table login_logs {
+  id bigint [pk, increment, not null]
+  user_id bigint [null]
+  name varchar(191) [null]
+  email varchar(191) [not null]
+  ip_address varchar(45) [null]
+  status varchar(191) [not null]
+  type varchar(191) [not null, default: 'login']
+  created_at timestamp [null]
+  updated_at timestamp [null]
+  
+  indexes {
+    user_id [name: 'login_logs_user_id_foreign']
+  }
+}
+
+Table password_reset_tokens {
+  email varchar(191) [pk, not null]
+  token varchar(191) [not null]
+  otp varchar(6) [null]
+  otp_expires_at timestamp [null]
+  created_at timestamp [null]
+}
+
+Table personal_access_tokens {
+  id bigint [pk, increment, not null]
+  tokenable_type varchar(191) [not null]
+  tokenable_id bigint [not null]
+  token varchar(64) [unique, not null]
+  name varchar(191) [not null]
+  abilities text [null]
+  last_used_at timestamp [null]
+  expires_at timestamp [null]
+  created_at timestamp [null]
+  updated_at timestamp [null]
+  
+  indexes {
+    token [unique, name: 'personal_access_tokens_token_unique']
+    (tokenable_type, tokenable_id) [name: 'personal_access_tokens_tokenable_type_tokenable_id_index']
+  }
+}
+
+Table sessions {
+  id varchar(191) [pk, not null]
+  user_id bigint [null]
+  ip_address varchar(45) [null]
+  user_agent text [null]
+  payload longtext [not null]
+  last_activity int [not null]
+  
+  indexes {
+    user_id [name: 'sessions_user_id_index']
+    last_activity [name: 'sessions_last_activity_index']
+  }
+}
+
+// ============================================
+// SYSTEM TABLES
+// ============================================
+
+Table notifications {
+  id char(36) [pk, not null]
+  type varchar(191) [not null]
+  notifiable_type varchar(191) [not null]
+  notifiable_id bigint [not null]
+  data text [not null]
+  read_at timestamp [null]
+  created_at timestamp [null]
+  updated_at timestamp [null]
+  
+  indexes {
+    notifiable_type [name: 'notifications_notifiable_type_index']
+  }
+}
+
+Table jobs {
+  id bigint [pk, increment, not null]
+  queue varchar(191) [not null]
+  payload longtext [not null]
+  attempts tinyint(3) [not null]
+  reserved_at int [null]
+  available_at int [not null]
+  created_at int [not null]
+  
+  indexes {
+    queue [name: 'jobs_queue_index']
+  }
+}
+
+Table failed_jobs {
+  id bigint [pk, increment, not null]
+  uuid varchar(191) [unique, not null]
+  connection text [not null]
+  queue text [not null]
+  payload longtext [not null]
+  exception longtext [not null]
+  failed_at timestamp [not null, default: `current_timestamp()`]
+  
+  indexes {
+    uuid [unique, name: 'failed_jobs_uuid_unique']
+  }
+}
+
+Table cache {
+  key varchar(191) [pk, not null]
+  value mediumtext [not null]
+  expiration int [not null]
+}
+
+Table cache_locks {
+  key varchar(191) [pk, not null]
+  owner varchar(191) [not null]
+  expiration int [not null]
+}
+
+Table migrations {
+  id int [pk, increment, not null]
+  migration varchar(191) [not null]
+  batch int [not null]
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+Enum backup_type_enum {
+  full
+  incremental
+}
+
+// ============================================
+// RELATIONSHIPS
+// ============================================
+
+// Core Relationships
+Ref: agents.user_id > users.id [delete: cascade]
+Ref: backup_source_directories.user_id > users.id [delete: cascade]
+Ref: backup_destination_directories.user_id > users.id [delete: cascade]
+Ref: backup_histories.user_id > users.id [delete: cascade]
+
+// Backup Job Relationships
+Ref: backup_jobs.agent_id > agents.id [delete: set null]
+Ref: backup_jobs.user_id > users.id [delete: set null]
+
+// Auth Relationships
+Ref: login_logs.user_id > users.id [delete: set null]
+
+// ============================================
+// TABLE GROUPS (for visual organization)
+// ============================================
+
+TableGroup core_entities {
+  users
+  agents
+}
+
+TableGroup backup_management {
+  backup_configurations
+  backup_source_directories
+  backup_destination_directories
+  backup_histories
+  backup_jobs
+  backup_schedules
+}
+
+TableGroup authentication {
+  login_logs
+  password_reset_tokens
+  personal_access_tokens
+  sessions
+}
+
+TableGroup system_tables {
+  notifications
+  jobs
+  failed_jobs
+  cache
+  cache_locks
+  migrations
+}

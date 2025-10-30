@@ -1,0 +1,145 @@
+@startuml Backup Dashboard Use Case Diagram (Simplified)
+
+skinparam actorStyle awesome
+skinparam packageStyle rectangle
+
+' Color coding for better visual distinction
+skinparam actor {
+    BackgroundColor<<User>> LightBlue
+    BorderColor<<User>> DarkBlue
+    BackgroundColor<<Admin>> LightCoral
+    BorderColor<<Admin>> DarkRed
+    BackgroundColor<<System>> LightGreen
+    BorderColor<<System>> DarkGreen
+}
+
+skinparam usecase {
+    BackgroundColor<<AdminOnly>> MistyRose
+    BorderColor<<AdminOnly>> Red
+    BackgroundColor<<Shared>> Wheat
+    BorderColor<<Shared>> Orange
+}
+
+left to right direction
+
+' Actors with color coding
+actor "User" as User <<User>>
+actor "Admin" as Admin <<Admin>>
+actor "Backup Agent" as Agent <<System>>
+actor "System" as System <<System>>
+
+rectangle "Backup Dashboard System" {
+    
+    ' Core Use Cases
+    package "Authentication" {
+        usecase "Login/Register" as Auth
+        usecase "Two-Factor Auth" as TwoFA
+        usecase "Password Reset" as Reset
+    }
+    
+    package "Backup Management" {
+        usecase "Configure Backup" as Config
+        usecase "Manual Backup" as Manual
+        usecase "Schedule Backup" as Schedule
+        usecase "View History" as History
+    }
+    
+    package "Recovery" {
+        usecase "Browse Backups" as Browse
+        usecase "Restore Data" as Restore
+        usecase "Verify Integrity" as Verify
+    }
+    
+    package "Agent Management" {
+        usecase "Register Agent" as Register
+        usecase "Monitor Agents" as Monitor
+        usecase "Execute Tasks" as Tasks
+    }
+    
+    package "Administration" {
+        usecase "Manage Users" as Users <<AdminOnly>>
+        usecase "View Logs" as Logs <<AdminOnly>>
+        usecase "System Settings" as Settings <<Shared>>
+    }
+    
+    package "Monitoring" {
+        usecase "View Dashboard" as Dashboard
+        usecase "Notifications" as Notify
+    }
+}
+
+' User relationships
+User --> Auth
+User --> TwoFA
+User --> Reset
+User --> Config
+User --> Manual
+User --> Schedule
+User --> History
+User --> Browse
+User --> Restore
+User --> Verify
+User --> Register
+User --> Monitor
+User --> Dashboard
+User --> Notify
+
+' Admin relationships (includes all User capabilities + admin-only)
+Admin --> Auth
+Admin --> TwoFA
+Admin --> Reset
+Admin --> Config
+Admin --> Manual
+Admin --> Schedule
+Admin --> History
+Admin --> Browse
+Admin --> Restore
+Admin --> Verify
+Admin --> Register
+Admin --> Monitor
+Admin --> Dashboard
+Admin --> Notify
+Admin --> Users
+Admin --> Logs
+Admin --> Settings
+
+' Agent relationships
+Agent --> Register
+Agent --> Tasks
+
+' System relationships
+System --> Schedule
+System --> Notify
+
+' Dependencies
+Manual ..> Tasks : <<include>>
+Schedule ..> Tasks : <<include>>
+Restore ..> Verify : <<include>>
+Auth ..> TwoFA : <<extend>>
+
+note left of User
+  **Regular User**
+  Manages personal backups
+  and recovery operations
+end note
+
+note left of Admin
+  **Administrator**
+  All User capabilities
+  + User management
+  + System logs access
+end note
+
+legend right
+  |= Color |= Meaning |
+  | <back:LightBlue>Blue</back> | User Actor |
+  | <back:LightCoral>Red</back> | Admin Actor |
+  | <back:LightGreen>Green</back> | System Actor |
+  | <back:MistyRose>Pink</back> | Admin Only Use Case |
+  | <back:Wheat>Orange</back> | Shared Use Case |
+  
+  Admin has all User capabilities
+  plus admin-only features.
+endlegend
+
+@enduml

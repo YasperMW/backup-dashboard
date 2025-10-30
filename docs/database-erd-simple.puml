@@ -1,0 +1,168 @@
+@startuml Backup Dashboard Database ERD (Simplified)
+
+skinparam linetype ortho
+skinparam class {
+    BackgroundColor<<Core>> LightBlue
+    BackgroundColor<<Backup>> LightGreen
+    BackgroundColor<<Auth>> LightCoral
+    BorderColor Black
+}
+
+' Core Entities
+entity "users" <<Core>> {
+    * id: BIGINT PK
+    --
+    * firstname: VARCHAR
+    * lastname: VARCHAR
+    * email: VARCHAR UNIQUE
+    * password: VARCHAR
+    * role: VARCHAR
+    two_factor_secret: TEXT
+    email_verified_at: TIMESTAMP
+}
+
+entity "agents" <<Core>> {
+    * id: BIGINT PK
+    --
+    * user_id: BIGINT FK
+    * name: VARCHAR
+    * hostname: VARCHAR
+    * token: VARCHAR UNIQUE
+    * status: VARCHAR
+    last_seen_at: TIMESTAMP
+    capabilities: JSON
+}
+
+' Backup Entities
+entity "backup_jobs" <<Backup>> {
+    * id: BIGINT PK
+    --
+    agent_id: BIGINT FK
+    user_id: BIGINT FK
+    * source_path: VARCHAR
+    * destination_path: VARCHAR
+    * backup_type: ENUM
+    * status: VARCHAR
+    options: JSON
+    started_at: TIMESTAMP
+    completed_at: TIMESTAMP
+}
+
+entity "backup_histories" <<Backup>> {
+    * id: BIGINT PK
+    --
+    user_id: BIGINT FK
+    * source_directory: VARCHAR
+    * destination_directory: VARCHAR
+    * filename: VARCHAR
+    * status: VARCHAR
+    * backup_type: VARCHAR
+    size: BIGINT
+    integrity_hash: VARCHAR
+    completed_at: TIMESTAMP
+}
+
+entity "backup_schedules" <<Backup>> {
+    * id: BIGINT PK
+    --
+    * user_id: INT
+    * frequency: VARCHAR
+    * source_directories: JSON
+    * destination_directory: VARCHAR
+    time: TIME
+    enabled: BOOLEAN
+}
+
+entity "backup_source_directories" <<Backup>> {
+    * id: BIGINT PK
+    --
+    user_id: BIGINT FK
+    * path: VARCHAR UNIQUE
+}
+
+entity "backup_destination_directories" <<Backup>> {
+    * id: BIGINT PK
+    --
+    user_id: BIGINT FK
+    * path: VARCHAR UNIQUE
+}
+
+entity "backup_configurations" <<Backup>> {
+    * id: BIGINT PK
+    --
+    * storage_location: VARCHAR
+    * backup_type: VARCHAR
+    * compression_level: VARCHAR
+    * retention_period: INT
+}
+
+' Auth Entities
+entity "login_logs" <<Auth>> {
+    * id: BIGINT PK
+    --
+    user_id: BIGINT FK
+    * email: VARCHAR
+    * status: VARCHAR
+    * type: VARCHAR
+    ip_address: VARCHAR
+}
+
+entity "personal_access_tokens" <<Auth>> {
+    * id: BIGINT PK
+    --
+    * tokenable_type: VARCHAR
+    * tokenable_id: BIGINT
+    * token: VARCHAR UNIQUE
+    * name: VARCHAR
+}
+
+entity "sessions" <<Auth>> {
+    * id: VARCHAR PK
+    --
+    user_id: BIGINT
+    * payload: LONGTEXT
+    * last_activity: INT
+}
+
+' Relationships
+users ||--o{ agents : "1:N"
+users ||--o{ backup_source_directories : "1:N"
+users ||--o{ backup_destination_directories : "1:N"
+users ||--o{ backup_histories : "1:N"
+users ||--o{ backup_jobs : "1:N"
+users ||--o{ login_logs : "1:N"
+
+agents ||--o{ backup_jobs : "1:N"
+
+note right of users
+  **Central Entity**
+  Manages authentication,
+  authorization, and
+  user-specific configurations
+end note
+
+note right of backup_jobs
+  **Job Orchestration**
+  Links users and agents
+  to execute backup tasks
+end note
+
+note bottom of backup_configurations
+  **Global Settings**
+  System-wide defaults
+  (no user relationship)
+end note
+
+legend right
+  |= Symbol |= Meaning |
+  | * | Required field |
+  | PK | Primary Key |
+  | FK | Foreign Key |
+  | 1:N | One-to-Many |
+  
+  **Database:** safeguard
+  **Engine:** InnoDB
+  **Charset:** utf8mb4
+endlegend
+
+@enduml

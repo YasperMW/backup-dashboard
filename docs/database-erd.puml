@@ -1,0 +1,330 @@
+@startuml Backup Dashboard Database ERD
+
+!define Table(name,desc) class name as "desc" << (T,#FFAAAA) >>
+!define primary_key(x) <b><color:#b8861b><&key></color> x</b>
+!define foreign_key(x) <color:#aaaaaa><&key></color> x
+!define column(x) <color:#efefef><&media-record></color> x
+!define index(x) <color:#00ff00><&list-rich></color> x
+
+' Styling
+skinparam linetype ortho
+skinparam class {
+    BackgroundColor<<Core>> LightBlue
+    BackgroundColor<<Backup>> LightGreen
+    BackgroundColor<<Auth>> LightCoral
+    BackgroundColor<<System>> LightYellow
+    BorderColor Black
+    ArrowColor Black
+}
+
+' Core Entities
+entity "users" <<Core>> {
+    primary_key(id): BIGINT(20) UNSIGNED
+    --
+    column(firstname): VARCHAR(191)
+    column(lastname): VARCHAR(191)
+    index(email): VARCHAR(191) UNIQUE
+    column(email_verified_at): TIMESTAMP NULL
+    column(password): VARCHAR(191)
+    column(role): VARCHAR(191) DEFAULT 'user'
+    column(two_factor_secret): TEXT NULL
+    column(two_factor_recovery_codes): TEXT NULL
+    column(two_factor_confirmed_at): TIMESTAMP NULL
+    column(remember_token): VARCHAR(100) NULL
+    column(current_team_id): BIGINT(20) UNSIGNED NULL
+    column(profile_photo_path): VARCHAR(2048) NULL
+    column(email_verification_code): VARCHAR(191) NULL
+    column(email_verification_code_expires_at): TIMESTAMP NULL
+    column(created_at): TIMESTAMP NULL
+    column(updated_at): TIMESTAMP NULL
+}
+
+entity "agents" <<Core>> {
+    primary_key(id): BIGINT(20) UNSIGNED
+    --
+    foreign_key(user_id): BIGINT(20) UNSIGNED
+    column(name): VARCHAR(191)
+    column(hostname): VARCHAR(191)
+    column(ip_address): VARCHAR(191) NULL
+    column(os): VARCHAR(191) NULL
+    index(token): VARCHAR(64) UNIQUE
+    column(last_seen_at): TIMESTAMP NULL
+    column(capabilities): JSON NULL
+    column(status): VARCHAR(191) DEFAULT 'offline'
+    column(version): VARCHAR(191) NULL
+    column(created_at): TIMESTAMP NULL
+    column(updated_at): TIMESTAMP NULL
+    column(deleted_at): TIMESTAMP NULL
+}
+
+' Backup Entities
+entity "backup_configurations" <<Backup>> {
+    primary_key(id): BIGINT(20) UNSIGNED
+    --
+    column(storage_location): VARCHAR(191) DEFAULT 'local'
+    column(backup_type): VARCHAR(191) DEFAULT 'full'
+    column(compression_level): VARCHAR(191) DEFAULT 'none'
+    column(retention_period): INT(11) DEFAULT 30
+    column(created_at): TIMESTAMP NULL
+    column(updated_at): TIMESTAMP NULL
+}
+
+entity "backup_source_directories" <<Backup>> {
+    primary_key(id): BIGINT(20) UNSIGNED
+    --
+    foreign_key(user_id): BIGINT(20) UNSIGNED NULL
+    index(path): VARCHAR(191) UNIQUE
+    column(created_at): TIMESTAMP NULL
+    column(updated_at): TIMESTAMP NULL
+}
+
+entity "backup_destination_directories" <<Backup>> {
+    primary_key(id): BIGINT(20) UNSIGNED
+    --
+    foreign_key(user_id): BIGINT(20) UNSIGNED NULL
+    index(path): VARCHAR(191) UNIQUE
+    column(created_at): TIMESTAMP NULL
+    column(updated_at): TIMESTAMP NULL
+}
+
+entity "backup_histories" <<Backup>> {
+    primary_key(id): BIGINT(20) UNSIGNED
+    --
+    foreign_key(user_id): BIGINT(20) UNSIGNED NULL
+    column(source_directory): VARCHAR(191)
+    column(destination_directory): VARCHAR(191)
+    index(destination_type): VARCHAR(20) NULL
+    column(filename): VARCHAR(191)
+    column(size): BIGINT(20) NULL
+    column(status): VARCHAR(191) DEFAULT 'pending'
+    column(backup_type): VARCHAR(191) DEFAULT 'full'
+    column(compression_level): VARCHAR(191) DEFAULT 'none'
+    column(key_version): VARCHAR(191) NULL
+    column(started_at): TIMESTAMP NULL
+    column(completed_at): TIMESTAMP NULL
+    column(integrity_hash): VARCHAR(191) NULL
+    column(integrity_verified_at): TIMESTAMP NULL
+    column(error_message): TEXT NULL
+    column(created_at): TIMESTAMP NULL
+    column(updated_at): TIMESTAMP NULL
+}
+
+entity "backup_jobs" <<Backup>> {
+    primary_key(id): BIGINT(20) UNSIGNED
+    --
+    foreign_key(agent_id): BIGINT(20) UNSIGNED NULL
+    foreign_key(user_id): BIGINT(20) UNSIGNED NULL
+    column(name): VARCHAR(191) NULL
+    column(description): TEXT NULL
+    column(source_path): VARCHAR(191) NULL
+    column(destination_path): VARCHAR(191) NULL
+    column(backup_type): ENUM('full','incremental') DEFAULT 'full'
+    index(status): VARCHAR(191) DEFAULT 'pending'
+    column(error): TEXT NULL
+    column(files_processed): INT(11) DEFAULT 0
+    column(size_processed): BIGINT(20) DEFAULT 0
+    column(backup_path): VARCHAR(191) NULL
+    column(checksum): VARCHAR(191) NULL
+    column(size): BIGINT(20) NULL
+    column(options): JSON NULL
+    column(started_at): TIMESTAMP NULL
+    column(completed_at): TIMESTAMP NULL
+    column(created_at): TIMESTAMP NULL
+    column(updated_at): TIMESTAMP NULL
+    column(deleted_at): TIMESTAMP NULL
+}
+
+entity "backup_schedules" <<Backup>> {
+    primary_key(id): BIGINT(20) UNSIGNED
+    --
+    column(user_id): INT(11)
+    column(frequency): VARCHAR(191)
+    column(time): TIME NULL
+    column(days_of_week): VARCHAR(191) NULL
+    column(source_directories): JSON
+    column(destination_directory): VARCHAR(191)
+    column(enabled): TINYINT(1) DEFAULT 1
+    column(retention_days): INT(11) NULL
+    column(max_backups): INT(11) NULL
+    column(created_at): TIMESTAMP NULL
+    column(updated_at): TIMESTAMP NULL
+}
+
+' Authentication & Security
+entity "login_logs" <<Auth>> {
+    primary_key(id): BIGINT(20) UNSIGNED
+    --
+    foreign_key(user_id): BIGINT(20) UNSIGNED NULL
+    column(name): VARCHAR(191) NULL
+    column(email): VARCHAR(191)
+    column(ip_address): VARCHAR(45) NULL
+    column(status): VARCHAR(191)
+    column(type): VARCHAR(191) DEFAULT 'login'
+    column(created_at): TIMESTAMP NULL
+    column(updated_at): TIMESTAMP NULL
+}
+
+entity "password_reset_tokens" <<Auth>> {
+    primary_key(email): VARCHAR(191)
+    --
+    column(token): VARCHAR(191)
+    column(otp): VARCHAR(6) NULL
+    column(otp_expires_at): TIMESTAMP NULL
+    column(created_at): TIMESTAMP NULL
+}
+
+entity "personal_access_tokens" <<Auth>> {
+    primary_key(id): BIGINT(20) UNSIGNED
+    --
+    column(tokenable_type): VARCHAR(191)
+    column(tokenable_id): BIGINT(20) UNSIGNED
+    index(token): VARCHAR(64) UNIQUE
+    column(name): VARCHAR(191)
+    column(abilities): TEXT NULL
+    column(last_used_at): TIMESTAMP NULL
+    column(expires_at): TIMESTAMP NULL
+    column(created_at): TIMESTAMP NULL
+    column(updated_at): TIMESTAMP NULL
+}
+
+entity "sessions" <<Auth>> {
+    primary_key(id): VARCHAR(191)
+    --
+    index(user_id): BIGINT(20) UNSIGNED NULL
+    column(ip_address): VARCHAR(45) NULL
+    column(user_agent): TEXT NULL
+    index(last_activity): INT(11)
+    column(payload): LONGTEXT
+}
+
+' System Tables
+entity "notifications" <<System>> {
+    primary_key(id): CHAR(36)
+    --
+    column(type): VARCHAR(191)
+    index(notifiable_type): VARCHAR(191)
+    column(notifiable_id): BIGINT(20) UNSIGNED
+    column(data): TEXT
+    column(read_at): TIMESTAMP NULL
+    column(created_at): TIMESTAMP NULL
+    column(updated_at): TIMESTAMP NULL
+}
+
+entity "jobs" <<System>> {
+    primary_key(id): BIGINT(20) UNSIGNED
+    --
+    index(queue): VARCHAR(191)
+    column(payload): LONGTEXT
+    column(attempts): TINYINT(3) UNSIGNED
+    column(reserved_at): INT(10) UNSIGNED NULL
+    column(available_at): INT(10) UNSIGNED
+    column(created_at): INT(10) UNSIGNED
+}
+
+entity "failed_jobs" <<System>> {
+    primary_key(id): BIGINT(20) UNSIGNED
+    --
+    index(uuid): VARCHAR(191) UNIQUE
+    column(connection): TEXT
+    column(queue): TEXT
+    column(payload): LONGTEXT
+    column(exception): LONGTEXT
+    column(failed_at): TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+}
+
+entity "cache" <<System>> {
+    primary_key(key): VARCHAR(191)
+    --
+    column(value): MEDIUMTEXT
+    column(expiration): INT(11)
+}
+
+entity "cache_locks" <<System>> {
+    primary_key(key): VARCHAR(191)
+    --
+    column(owner): VARCHAR(191)
+    column(expiration): INT(11)
+}
+
+entity "migrations" <<System>> {
+    primary_key(id): INT(10) UNSIGNED
+    --
+    column(migration): VARCHAR(191)
+    column(batch): INT(11)
+}
+
+' Relationships
+users ||--o{ agents : "owns"
+users ||--o{ backup_source_directories : "configures"
+users ||--o{ backup_destination_directories : "configures"
+users ||--o{ backup_histories : "creates"
+users ||--o{ backup_jobs : "initiates"
+users ||--o{ login_logs : "generates"
+users ||--o{ sessions : "has"
+
+agents ||--o{ backup_jobs : "executes"
+
+backup_jobs }o--|| agents : "assigned to"
+backup_jobs }o--|| users : "belongs to"
+
+backup_source_directories }o--|| users : "belongs to"
+backup_destination_directories }o--|| users : "belongs to"
+backup_histories }o--|| users : "belongs to"
+login_logs }o--|| users : "tracks"
+
+personal_access_tokens }o--|| users : "authenticates"
+
+note right of users
+  **Core User Entity**
+  - Supports role-based access (user/admin)
+  - Multi-factor authentication enabled
+  - Email verification with OTP
+  - Soft deletes not enabled
+end note
+
+note right of agents
+  **Backup Agent**
+  - Python-based client application
+  - Tracks online/offline status
+  - Stores capabilities as JSON
+  - Soft deletes enabled
+  - CASCADE delete with user
+end note
+
+note right of backup_jobs
+  **Job Execution**
+  - Tracks backup task progress
+  - Links agent and user
+  - Stores options as JSON
+  - SET NULL on agent/user delete
+  - Soft deletes enabled
+end note
+
+note right of backup_histories
+  **Backup Records**
+  - Immutable backup history
+  - Tracks integrity verification
+  - Supports local and remote destinations
+  - CASCADE delete with user
+end note
+
+note bottom of backup_configurations
+  **Global Configuration**
+  - System-wide backup settings
+  - No user relationship (singleton)
+  - Default values for new backups
+end note
+
+legend right
+  |= Color |= Category |
+  | <back:LightBlue>Blue</back> | Core Entities |
+  | <back:LightGreen>Green</back> | Backup Entities |
+  | <back:LightCoral>Coral</back> | Auth & Security |
+  | <back:LightYellow>Yellow</back> | System Tables |
+  
+  **Normalization Level:** 3NF
+  **Foreign Key Constraints:** Enforced
+  **Cascade Rules:** Documented per relationship
+endlegend
+
+@enduml
