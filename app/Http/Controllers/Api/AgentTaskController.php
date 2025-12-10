@@ -178,6 +178,7 @@ class AgentTaskController extends Controller
                 // Helper to build history payload
                 $buildHistory = function(string $destDir, string $destType, ?string $fileName) use ($task, $compression, $enc, $request) {
                     return [
+                        'user_id' => $task->user_id,
                         'source_directory' => $task->source_path,
                         'destination_directory' => $destDir,
                         'destination_type' => $destType,
